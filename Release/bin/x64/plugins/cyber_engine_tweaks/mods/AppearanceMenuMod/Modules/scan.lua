@@ -1,14 +1,18 @@
 local Scan = {
+
+  -- Main properties
+  searchQuery = '',
+  searchBarWidth = 500,
+  minimalUI = false,
+
+  -- Companion Drive properties
   possibleSeats = {
     { name = "Front Right", cname = "seat_front_right" },
     { name = "Back Right", cname = "seat_back_right" },
     { name = "Back Left", cname = "seat_back_left" },
     { name = "Front Left", cname = "seat_front_left" },
   },
-  TPPCameraOptions = {
-    { name = "Close", vec = Vector4.new(0, -8, 0.5, 0)},
-    { name = "Far", vec = Vector4.new(0, -12, 0.5, 0)},
-  },
+  TPPCameraOptions = {},
   vehicleSeats = '',
   selectedSeats = {},
   vehicle = '',
@@ -20,7 +24,37 @@ local Scan = {
   isDriving = false,
   carCam = false,
   currentCam = 1,
+
+  -- Saved Despawn properties
+  savedDespawns = {},
+  savedDespawnsActive = true,
+
+  -- Appearance Trigger properties
+  lastAppTriggers = {},
+  selectedAppTrigger = nil,
+  appTriggerOptions = {},
+  shouldSenseOnce = false,
 }
+
+function Scan:Initialize()
+  Scan.TPPCameraOptions = {
+    { name = "Close", vec = Vector4.new(0, -8, 0.5, 0)},
+    { name = "Far", vec = Vector4.new(0, -12, 0.5, 0)},
+  }
+
+  Scan.appTriggerOptions = {
+    { name = "None", type = 1},
+    { name = "Default", type = 2},
+    { name = "Combat", type = 3},
+    { name = "Zone", type = 4},
+    { name = "Area", type = 5},
+    { name = "Position", type = 6},
+  }
+
+  Scan.selectedAppTrigger = Scan.appTriggerOptions[1]
+
+  Scan.savedDespawns = Scan:LoadSavedDespawns()
+end
 
 function Scan:Draw(AMM, target, style)
   if ImGui.BeginTabItem("Scan") then
@@ -28,14 +62,28 @@ function Scan:Draw(AMM, target, style)
     -- Util Popup Helper --
     Util:SetupPopup()
 
+    -- Reset Should Sense
+    Scan.shouldSenseOnce = true
+
+    -- Sense Zone and Area triggers once
+    if Scan.shouldSenseOnce then
+      Scan:ActivateAppTriggerForType('area')
+      Scan:ActivateAppTriggerForType('zone')
+      Scan.shouldSenseOnce = false
+    end
+
     AMM.UI:DrawCrossHair()
 
     if Tools.lockTarget then
-      if Tools.currentNPC.type ~= 'entEntity' and Tools.currentNPC.type ~= 'gameObject' then
-        target = Tools.currentNPC
+      if Tools.currentTarget.type ~= 'entEntity' and Tools.currentTarget.type ~= 'gameObject' then
+        target = Tools.currentTarget
 
         if target.handle and target.handle ~= '' then
           target.options = AMM:GetAppearanceOptions(target.handle, target.id)
+
+          if target.type == "Spawn" and target.handle:IsNPC() then
+            target.type = "NPCPuppet"
+          end
         end
       end
     end
@@ -96,7 +144,29 @@ function Scan:Draw(AMM, target, style)
       -- Check if target is V
       if target.appearance ~= nil and target.appearance ~= "None" then
 
+        local buttonLabel = " Lock Target "
+        if Tools.lockTarget then
+          buttonLabel = " Unlock Target "
+        end
+
+        ImGui.SameLine()
+        if ImGui.SmallButton(buttonLabel) then
+          Tools.lockTarget = not Tools.lockTarget
+          Tools:SetCurrentTarget(target)
+        end
+
         AMM.UI:Separator()
+
+        if target.id ~= nil and target.id ~= "None" then
+          AMM.UI:TextColored("Target ID:")
+          ImGui.InputText("", target.id, 50, ImGuiInputTextFlags.ReadOnly)
+          ImGui.SameLine()
+          if ImGui.SmallButton("Copy") then
+            ImGui.SetClipboardText(target.id)
+          end
+        end
+
+        ImGui.Spacing()
 
         AMM.UI:TextColored(tabConfig[target.type].currentTitle)
         ImGui.Text(target.appearance or "default")
@@ -151,6 +221,68 @@ function Scan:Draw(AMM, target, style)
             ImGui.Text(savedApp)
             AMM:DrawButton("Clear Saved Appearance", style.buttonWidth, style.buttonHeight, "Clear", target)
           end
+
+          AMM.UI:Spacing(3)
+
+          if Scan:TargetIsSpawn(target) then
+            AMM.UI:TextColored("Appearance Trigger:")
+
+            local existingTrigger = nil
+            for x in db:nrows(f("SELECT * FROM appearance_triggers WHERE appearance = '%s'", target.appearance)) do
+              existingTrigger = x
+            end
+
+            if existingTrigger then
+              if existingTrigger.type == 5 and not AMM.playerCurrentDistrict then
+                -- Avoid loading Area type if user reloaded all mods
+              else
+                Scan.selectedAppTrigger = Scan.appTriggerOptions[existingTrigger.type]
+              end
+            else
+              Scan.selectedAppTrigger = Scan.appTriggerOptions[1]
+            end
+
+            for _, option in ipairs(Scan.appTriggerOptions) do
+
+              if option.name == "Area" and AMM.playerCurrentDistrict == nil then
+                Util:AMMError("Don't use Reload All Mods.\nPlease reload your save game or move to a different area.")
+              else
+                if ImGui.RadioButton(option.name, Scan.selectedAppTrigger.name == option.name) then
+                  Scan.selectedAppTrigger = option
+
+                  if option.type == 1 then
+                    Scan:RemoveTrigger(target)
+                  else
+                    Scan:AddTrigger(target, option.type)
+                  end
+                end
+              end
+  
+              if option.name ~= "None" then ImGui.SameLine() end
+            end
+
+            ImGui.Spacing()
+
+            local currentTrigger = Scan.selectedAppTrigger.name
+            if currentTrigger == "Area" or currentTrigger == "Zone" then
+              ImGui.Text("Current "..Scan.selectedAppTrigger.name..": ")
+
+              local currentArea = AMM.playerCurrentDistrict
+              if currentTrigger == "Zone" then currentArea = AMM.player:GetCurrentSecurityZoneType(AMM.player).value end
+              ImGui.SameLine()
+              AMM.UI:TextColored(currentArea)
+
+              local shouldDrawSavedArea = existingTrigger ~= nil and (existingTrigger.type == 4 or existingTrigger.type == 5)
+              if shouldDrawSavedArea then
+                local area = existingTrigger.args        
+                if area ~= currentArea then
+                  ImGui.Text("Saved "..Scan.selectedAppTrigger.name..": ")
+                  ImGui.SameLine()
+                  AMM.UI:TextColored(area)
+                end
+              end
+            end
+          end
         end
       end
 
@@ -163,6 +295,10 @@ function Scan:Draw(AMM, target, style)
       if target.name == "Door" then
         if ImGui.Button("  Unlock Door  ", style.buttonWidth, style.buttonHeight - 5) then
           Util:UnlockDoor(target.handle)
+        end
+      elseif target.name == "ElevatorFloorTerminal" then
+        if ImGui.Button("  Restore Access  ", style.buttonWidth, style.buttonHeight - 5) then
+          Util:RestoreElevator(target.handle)
         end
       elseif target.handle:IsVehicle() then
         if ImGui.Button("  Unlock Vehicle  ", style.halfButtonWidth, style.buttonHeight - 5) then
@@ -231,44 +367,85 @@ function Scan:Draw(AMM, target, style)
         local spawnID = AMM:IsSpawnable(target)
         if spawnID ~= nil then
           local favoritesLabels = {"  Add to Spawnable Favorites  ", "  Remove from Spawnable Favorites  "}
-          target.id = spawnID
+          local newTarget = Util:ShallowCopy({}, target)
+          newTarget.id = spawnID
           AMM.Spawn:DrawFavoritesButton(favoritesLabels, target, true)
         end
 
+        local buttonStyle = style.buttonWidth
+        if AMM.userSettings.experimental then buttonStyle = style.halfButtonWidth end
+        local buttonLabel = "  Follower  "
+        if target.handle.isPlayerCompanionCached then buttonLabel = "  Unfollower  " end
+        if ImGui.Button(buttonLabel, buttonStyle, style.buttonHeight - 5) then
+          if target.handle.isPlayerCompanionCached then
+            Util:ToggleCompanion(target.handle)
+          else
+            AMM.Spawn:SetNPCAsCompanion(target.handle)
+          end
+        end
+
         if AMM.userSettings.experimental then
+          ImGui.SameLine()
+
           if ImGui.Button("  Fake Die  ", style.halfButtonWidth, style.buttonHeight - 5) then
             target.handle:SendAIDeathSignal()
-          end
-  
-          ImGui.SameLine()
-  
-          if ImGui.Button("  Follower  ", style.halfButtonWidth, style.buttonHeight - 5) then
-            AMM.Spawn:SetNPCAsCompanion(target.handle)
           end
         end
       end
 
       if AMM.userSettings.experimental and not mountedVehicle then
-        if ImGui.Button("  Despawn  ", style.buttonWidth, style.buttonHeight - 5) then
-          local spawnedNPC = nil
-    			for _, spawn in pairs(AMM.Spawn.spawnedNPCs) do
-    				if target.id == spawn.id then spawnedNPC = spawn break end
-    			end
+        local buttonWidth = style.buttonWidth
+        local shouldAllowSaveDespawn = not(target.handle:IsNPC() or target.handle:IsVehicle())
 
-    			if spawnedNPC then
-    				AMM.Spawn:DespawnNPC(spawnedNPC)
-    			else
-    				Util:Despawn(target.handle)
-    			end
+        if shouldAllowSaveDespawn then buttonWidth = style.halfButtonWidth end
+
+        if ImGui.Button("  Despawn  ", buttonWidth, style.buttonHeight - 5) then
+          target:Despawn()
+        end
+
+        if shouldAllowSaveDespawn then
+          ImGui.SameLine()
+          local hash = tostring(target.handle:GetEntityID().hash)
+          local buttonLabel = "  Save Despawn  "
+          if Scan.savedDespawns[hash] then buttonLabel = "Clear Saved Despawn" end
+          if ImGui.Button(buttonLabel, style.halfButtonWidth, style.buttonHeight - 5) then
+            if buttonLabel == "  Save Despawn  " then
+              Scan:SaveDespawn(target)
+            else
+              Scan:ClearSavedDespawn(hash)
+            end
+          end
+        end
+
+        if next(Scan.savedDespawns) ~= nil then
+          Scan.savedDespawnsActive = ImGui.Checkbox("Saved Despawns Active", Scan.savedDespawnsActive)
+
+          if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Disable this checkbox and reload your save to be able to target and Clear Saved Despawns")
+          end
         end
       end
 
       AMM.UI:Separator()
 
-      if target.options ~= nil then
-        AMM.UI:TextColored("List of Appearances:")
-        ImGui.Spacing()
+      AMM.UI:TextColored("List of Appearances:")
+      ImGui.Spacing()
 
+      ImGui.PushItemWidth(Spawn.searchBarWidth)
+      Scan.searchQuery = ImGui.InputTextWithHint(" ", "Search", Scan.searchQuery, 100)
+      Scan.searchQuery = Scan.searchQuery:gsub('"', '')
+      ImGui.PopItemWidth()
+
+      if Scan.searchQuery ~= '' then
+        ImGui.SameLine()
+        if ImGui.Button("Clear") then
+          Scan.searchQuery = ''
+        end
+      end
+
+      ImGui.Spacing()
+
+      if target.options ~= nil then
         x = 0
         for _, appearance in ipairs(target.options) do
           local len = ImGui.CalcTextSize(appearance)
@@ -281,19 +458,21 @@ function Scan:Draw(AMM, target, style)
         end
 
         resX, resY = GetDisplayResolution()
-        y = #target.options * 40
+        y = #target.options * 60
         if y > resY - (resY / 2) then
           y = resY / 3
         end
 
         if ImGui.BeginChild("Scrolling", x, y) then
           for i, appearance in ipairs(target.options) do
-            if (ImGui.Button(appearance)) then              
+            if (ImGui.Button(appearance)) then
               AMM:ChangeAppearanceTo(target, appearance)
             end
           end
         end
         ImGui.EndChild()
+      else
+        ImGui.TextColored(1, 0.16, 0.13, 0.75, "No Appearances")
       end
     else
       ImGui.NewLine()
@@ -306,12 +485,10 @@ function Scan:Draw(AMM, target, style)
 
       AMM.UI:Separator()
 
-      local qm = AMM.player:GetQuickSlotsManager()
-		 	handle = qm:GetVehicleObject()
-      if handle then
-        local target = AMM:NewTarget(handle, 'vehicle', AMM:GetScanID(handle), AMM:GetVehicleName(handle),AMM:GetScanAppearance(handle), AMM:GetAppearanceOptions(handle))
+      local mountedVehicle = Util:GetMountedVehicleTarget()
+      if mountedVehicle then
         if ImGui.Button("Target Mounted Vehicle", style.buttonWidth, style.buttonHeight) then
-          Tools:SetCurrentTarget(target)
+          Tools:SetCurrentTarget(mountedVehicle)
           Tools.lockTarget = true
         end
       end
@@ -319,6 +496,38 @@ function Scan:Draw(AMM, target, style)
 
     ImGui.EndTabItem()
   end
+end
+
+function Scan:DrawMinimalUI()
+  
+  AMM.UI:DrawCrossHair()
+
+  ImGui.SetNextWindowSize(250, 180)
+
+  Scan.minimalUI = ImGui.Begin("Build Mode", ImGuiWindowFlags.AlwaysAutoResize + ImGuiWindowFlags.NoCollapse)
+
+  if Scan.minimalUI then
+    local target = AMM:GetTarget()
+    if target == nil and (AMM.Tools.currentTarget and AMM.Tools.currentTarget ~= '') then
+      target = AMM.Tools.currentTarget
+    end
+    
+    if target ~= nil then
+      ImGui.Text(target.name)
+      AMM.UI:TextColored(target.type)
+      ImGui.Spacing()
+      ImGui.Text("Speed:")
+      ImGui.SameLine()
+      AMM.UI:TextColored(tostring(target.speed * 1000))
+    else
+      ImGui.PushTextWrapPos()
+      ImGui.TextColored(1, 0.16, 0.13, 0.75, "No Target")
+      ImGui.PopTextWrapPos()
+    end
+
+  end
+
+  ImGui.End()
 end
 
 function Scan:DrawSeatsPopup()
@@ -473,7 +682,7 @@ function Scan:AutoAssignSeats()
       if Scan.selectedSeats[ent.name] then
         if Game.FindEntityByID(Scan.selectedSeats[ent.name].vehicle.handle:GetEntityID()) then
           if Scan.selectedSeats[ent.name].seat.name == "Front Left" then
-            Scan.drivers[ent.id] = Scan.selectedSeats[ent.name]
+            Scan.drivers[AMM:GetScanID(ent.handle)] = Scan.selectedSeats[ent.name]
           end
         else
           Scan.selectedSeats[ent.name] = nil
@@ -558,16 +767,16 @@ function Scan:SetVehicleDestination(worldMap, vehicleMap)
   local mappinPos = mappin:GetWorldPosition()
   local mappinNodeRef = mappin:GetPointData():GetMarkerRef()
 
-  local cmd = AMM.Scan:SetDriverVehicleToGoTo(AMM.Scan.companionDriver, mappinNodeRef)
+  local cmd = Scan:SetDriverVehicleToGoTo(Scan.companionDriver, mappinNodeRef)
   Scan.isDriving = true
 
   Cron.Every(1, function(timer)
-    if AMM.Scan.vehicle ~= '' then
+    if Scan.vehicle ~= '' then
       local playerPos = AMM.player:GetWorldPosition()
       local dist = Util:VectorDistance(playerPos, mappinPos)
 
-      if dist < 45 and vehicleMap[tostring(AMM.Scan.companionDriver.vehicle.handle:GetEntityID().hash)] ~= nil then
-        vehicleMap[tostring(AMM.Scan.companionDriver.vehicle.handle:GetEntityID().hash)]:StopExecutingCommand(cmd, true)
+      if dist < 45 and vehicleMap[tostring(Scan.companionDriver.vehicle.handle:GetEntityID().hash)] ~= nil then
+        vehicleMap[tostring(Scan.companionDriver.vehicle.handle:GetEntityID().hash)]:StopExecutingCommand(cmd, true)
         Scan.isDriving = false
         Cron.Halt(timer)
       end
@@ -614,6 +823,184 @@ function Scan:ShouldDisplayAssignSeatsButton()
   end
 
   return false
+end
+
+function Scan:TargetIsSpawn(target)
+  if next(AMM.Spawn.spawnedNPCs) ~= nil then
+		for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
+			if ent.hash == target.hash then
+				return true
+			end
+		end
+
+    return false
+	end
+end
+
+-- Save Despawn methods
+function Scan:LoadSavedDespawns()
+  local despawns = {}
+  
+  for r in db:nrows("SELECT * FROM saved_despawns") do
+    despawns[r.entity_hash] = {pos = r.position, removed = false}
+  end
+
+  return despawns
+end
+
+function Scan:ClearSavedDespawn(hash)
+  Scan.savedDespawns[hash] = nil
+  db:execute(f('DELETE FROM saved_despawns WHERE entity_hash = "%s"', hash))
+end
+
+function Scan:SaveDespawn(target)
+  local hash = tostring(target.handle:GetEntityID().hash)
+  local playerPos = Util:GetPosString(Game.GetPlayer():GetWorldPosition())
+
+  Scan.savedDespawns[hash] = {pos = playerPos, removed = false}
+  db:execute(f('INSERT INTO saved_despawns (entity_hash, position) VALUES ("%s", "%s")', hash, playerPos))
+end
+
+function Scan:ResetSavedDespawns()
+  for hash, ent in pairs(Scan.savedDespawns) do
+    ent.removed = false
+  end
+end
+
+function Scan:SenseSavedDespawns()
+  if Scan.savedDespawnsActive then
+
+    if next(Scan.savedDespawns) ~= nil then
+      local playerPos = Game.GetPlayer():GetWorldPosition()
+      for hash, ent in pairs(Scan.savedDespawns) do        
+        if ent.removed == false then
+          local dist = Util:VectorDistance(playerPos, Util:GetPosFromString(ent.pos))
+
+          if dist <= 30 then
+            Scan:FindEntityByHash(hash)
+          end
+        end
+      end
+    end
+  end
+end
+
+function Scan:FindEntityByHash(hash)
+  Util:GetAllInRange(30, true, true, function(entity)
+    local entityHash = tostring(entity:GetEntityID().hash)
+		if entity and entityHash == hash then
+			entity:Dispose()
+      Scan.savedDespawns[hash].removed = true
+		end
+	end)
+end
+
+-- App Trigger methods
+function Scan:RemoveTrigger(target)
+  db:execute(f("DELETE FROM appearance_triggers WHERE appearance = '%s'", target.appearance))
+end
+
+function Scan:RemoveTriggerByType(target, triggerType)
+  db:execute(f("DELETE FROM appearance_triggers WHERE entity_id = '%s' AND type = %i", target.id, triggerType))
+end
+
+function Scan:RemoveTriggerByArgs(target, triggerType, args)
+  db:execute(f('DELETE FROM appearance_triggers WHERE entity_id = "%s" AND type = %i AND args = "%s"', target.id, triggerType, args))
+end
+
+function Scan:RemoveTriggerByPosition(target, playerPos)
+  local check = nil
+  for pos in db:urows(f('SELECT args FROM appearance_triggers WHERE entity_id = "%s" AND type = 6', target.id)) do
+    local dist = Util:VectorDistance(Util:GetPosFromString(pos), playerPos)
+    if dist < 20 then
+      db:execute(f("DELETE FROM appearance_triggers WHERE entity_id = '%s' AND args = '%s'", target.id, pos))
+    end
+  end
+end
+
+function Scan:AddTrigger(target, triggerType)
+  local args = nil
+  if triggerType == 4 then
+    args = AMM.playerCurrentZone or AMM.player:GetCurrentSecurityZoneType(AMM.player).value
+    Scan:RemoveTriggerByArgs(target, triggerType, args)
+  elseif triggerType == 5 then
+    args = AMM.playerCurrentDistrict
+    Scan:RemoveTriggerByArgs(target, triggerType, args)
+  elseif triggerType == 6 then
+    local playerPos = AMM.player:GetWorldPosition()
+    Scan:RemoveTriggerByPosition(target, playerPos)
+    args = Util:GetPosString(playerPos)
+  else
+    Scan:RemoveTriggerByType(target, triggerType)
+  end
+
+  Scan:RemoveTrigger(target)
+
+  local command = (f('INSERT INTO appearance_triggers (entity_id, appearance, type, args) VALUES ("%s", "%s", %i, "%s")', target.id, target.appearance, triggerType, args))
+  command = command:gsub('"nil"', "NULL")
+  db:execute(command)
+end
+
+function Scan:ActivateAppTriggerForType(triggerType)
+  local typeNum = {
+    default = 2,
+    combat = 3,
+    zone = 4,
+    area = 5,
+    position = 6
+  }
+
+  local currentType = typeNum[triggerType]
+
+  if next(AMM.Spawn.spawnedNPCs) ~= nil then
+    for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
+      if ent and ent.handle and type(ent.handle) == 'userdata' and ent.handle:IsNPC() then
+        local triggers = {}
+        for x in db:nrows(f('SELECT * FROM appearance_triggers WHERE entity_id = "%s" AND type = %i', ent.id, currentType)) do
+          table.insert(triggers, x)
+        end
+
+        local lastApp = Scan.lastAppTriggers[ent.id] or nil
+
+        if triggers then
+          Scan.lastAppTriggers[ent.id] = ent.appearance
+
+          for _, trigger in ipairs(triggers) do
+            if (triggerType == "area" and trigger.args == AMM.playerCurrentDistrict)
+            or (triggerType == "zone" and trigger.args == AMM.playerCurrentZone) then
+              AMM:ChangeAppearanceTo(ent, trigger.appearance)
+            elseif triggerType == "combat" or triggerType == "default" then
+              AMM:ChangeAppearanceTo(ent, trigger.appearance)
+            end
+          end
+        elseif lastApp then
+          AMM:ChangeAppearanceTo(ent, lastApp)
+        end
+      end
+    end
+  end
+end
+
+function Scan:SenseAppTriggers()
+  if next(AMM.Spawn.spawnedNPCs) ~= nil then
+    for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
+      if ent.handle:IsNPC() then
+        local triggers = {}
+        for x in db:nrows(f('SELECT * FROM appearance_triggers WHERE entity_id = "%s" AND type = 6', ent.id)) do
+          table.insert(triggers, x)
+        end
+
+        if #triggers > 0 then
+          for _, trigger in ipairs(triggers) do
+            local dist = Util:VectorDistance(Game.GetPlayer():GetWorldPosition(), Util:GetPosFromString(trigger.args))
+            if dist <= 60 then
+              AMM:ChangeAppearanceTo(ent, trigger.app)
+            end
+          end
+        end
+      end
+    end
+  end
 end
 
 return Scan

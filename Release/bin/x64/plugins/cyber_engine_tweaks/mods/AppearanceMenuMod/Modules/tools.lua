@@ -9,6 +9,8 @@ function Tools:new()
   -- Layout Properties
   Tools.style = {}
   Tools.actionCategories = {}
+  Tools.movementWindow = {open = false, isEditing = false}
+  Tools.scaleWidth = nil
 
   -- Time Properties
   Tools.pauseTime = false
@@ -18,7 +20,7 @@ function Tools:new()
   Tools.slowMotionMaxValue = 1
   Tools.slowMotionToggle = false
   Tools.relicEffect = true
-  Tools.relicOriginalFlats = Tools:GetRelicFlats()
+  Tools.relicOriginalFlats = nil
 
   -- Teleport Properties
   Tools.lastLocation = nil
@@ -28,6 +30,7 @@ function Tools:new()
   Tools.favoriteLocations = {}
   Tools.useTeleportAnimation = false
   Tools.isTeleporting = false
+  Tools.defaultLocations = {}
 
   -- V Properties --
   Tools.playerVisibility = true
@@ -40,17 +43,11 @@ function Tools:new()
   Tools.seamfixToggle = false
   Tools.savePhotoModeToggles = false
   Tools.animatedHead = AMM.userSettings.animatedHead
+  Tools.tppHead = false
   Tools.TPPCamera = false
   Tools.TPPCameraBeforeVehicle = false
   Tools.selectedTPPCamera = 1
-  Tools.TPPCameraOptions = {
-    {name = "Left", vec = Vector4.new(-0.5, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
-    {name = "Right", vec = Vector4.new(0.5, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
-    {name = "Center Close", vec = Vector4.new(0, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
-    {name = "Center Far", vec = Vector4.new(0, -4, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
-    {name = "Front Close", vec = Vector4.new(0, 2, 0, 0), rot = Quaternion.new(50.0, 0.0, 4000.0, 0.0)},
-    {name = "Front Far", vec = Vector4.new(0, 4, 0, 0), rot = Quaternion.new(50.0, 0.0, 4000.0, 0.0)},
-  }
+  Tools.TPPCameraOptions = nil
 
   -- Target Properties --
   Tools.protectedNPCs = {}
@@ -58,10 +55,12 @@ function Tools:new()
   Tools.frozenNPCs = {}
   Tools.equippedWeaponNPCs = {}
   Tools.forceWeapon = false
-  Tools.currentNPC = ''
+  Tools.currentTarget = ''
   Tools.lockTarget = false
+  Tools.lockTargetPinID = nil
   Tools.precisonMode = false
   Tools.relativeMode = false
+  Tools.directMode = false
   Tools.proportionalMode = true
   Tools.isCrouching = false
   Tools.npcUpDown = 0
@@ -72,31 +71,62 @@ function Tools:new()
   Tools.savedPosition = ''
   Tools.selectedFace = {name = 'Select Expression'}
   Tools.activatedFace = false
-  Tools.upperBodyMovement = true
-  Tools.lookAtV = true
+  Tools.lookAtActiveNPCs = {}
   Tools.lookAtTarget = nil
   Tools.expressions = AMM:GetPersonalityOptions()
   Tools.photoModePuppet = nil
   Tools.currentTargetComponents = nil
 
+  -- PME Properties --
+  Tools.selectedLookAt = nil
+  Tools.lookAtOptions = nil
+  Tools.defaultAperture = 4
+  Tools.defaultFOV = 60
+  Tools.headStiffness = 0.0
+  Tools.headPoseOverride = 1.0
+  Tools.chestStiffness = 0.1
+  Tools.chestPoseOverride = 0.5
+  Tools.lookAtSpeed = 140.0
+  Tools.cursorController = nil
+  Tools.cursorDisabled = false
+  Tools.cursorStateLock = false
+
   return Tools
 end
 
+function Tools:Initialize()
+  -- Setup TPP Camera Options --
+  Tools.TPPCameraOptions = {
+    {name = "Left", vec = Vector4.new(-0.5, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Left Close", vec = Vector4.new(-0.4, -1.5, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Right", vec = Vector4.new(0.5, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Right Close", vec = Vector4.new(0.4, -1.5, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Center Close", vec = Vector4.new(0, -2, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Center Far", vec = Vector4.new(0, -4, 0, 1.0), rot = Quaternion.new(0.0, 0.0, 0.0, 1.0)},
+    {name = "Front Close", vec = Vector4.new(0, 2, 0, 0), rot = Quaternion.new(50.0, 0.0, 4000.0, 0.0)},
+    {name = "Front Far", vec = Vector4.new(0, 4, 0, 0), rot = Quaternion.new(50.0, 0.0, 4000.0, 0.0)},
+  }
+
+  Tools.lookAtOptions = {
+    {name = "All", parts = {'LookatPreset.PhotoMode_LookAtCamera_inline0', 'LookatPreset.PhotoMode_LookAtCamera_inline1'}},
+    {name = "Head Only", parts = {'LookatPreset.PhotoMode_LookAtCamera_inline0'}},
+    {name = "Eyes Only", parts = {}},
+  }
+
+  Tools.selectedLookAt = Tools.lookAtOptions[1]
+end
+
 function Tools:Draw(AMM, target)
+  Tools.style = {
+    buttonHeight = ImGui.GetFontSize() * 2,
+    buttonWidth = ImGui.GetWindowContentRegionWidth(),
+    halfButtonWidth = ((ImGui.GetWindowContentRegionWidth() / 2) - 5)
+  }
+
+  -- Util Popup Helper --
+  Util:SetupPopup()  
+
   if ImGui.BeginTabItem("Tools") then
-
-    -- Util Popup Helper --
-    Util:SetupPopup()
-
-    if AMM.Light.isEditing then
-      AMM.Light:Draw(AMM)
-    end
-
-    Tools.style = {
-      buttonHeight = ImGui.GetFontSize() * 2,
-      buttonWidth = -1,
-      halfButtonWidth = ((ImGui.GetWindowContentRegionWidth() / 2) - 5)
-    }
 
     Tools.actionCategories = {
       { name = "Target Actions", actions = Tools.DrawNPCActions },
@@ -114,6 +144,7 @@ function Tools:Draw(AMM, target)
           { name = "V Actions", actions = Tools.DrawVActions },
           { name = "Target Actions", actions = Tools.DrawNPCActions },
           { name = "Time Actions", actions = Tools.DrawTimeActions },
+          { name = "Photo Mode Enhancements", actions = Tools.DrawPhotoModeEnhancements },
         }
       end
 
@@ -124,7 +155,7 @@ function Tools:Draw(AMM, target)
 
         if treeNode then
           ImGui.Separator()
-          AMM.UI:Spacing(6)
+          AMM.UI:Spacing(3)
 
           if category.name ~= "Target Actions" then
             category.actions()
@@ -155,7 +186,7 @@ end
 function Tools:DrawVActions()
   -- AMM.UI:TextColored("V Actions:")
 
-  if AMM.playerInPhoto then
+  if AMM.playerInPhoto or Util:CheckVByID(Tools.currentTarget.id) then
     if ImGui.Button("Toggle Makeup", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
       Tools:ToggleMakeup()
     end
@@ -165,29 +196,42 @@ function Tools:DrawVActions()
       Tools:ToggleAccessories()
     end
 
-    if ImGui.Button("Toggle Seamfix", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+    local buttonWidth = Tools.style.halfButtonWidth
+    if not AMM.playerInPhoto then
+      buttonWidth = Tools.style.buttonWidth
+    end
+
+    if ImGui.Button("Toggle Seamfix", buttonWidth, Tools.style.buttonHeight) then
       Tools:ToggleSeamfix()
     end
 
-    ImGui.SameLine()
-    if ImGui.Button("Target V", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-      Tools:SetCurrentTarget(Tools:GetVTarget())
-      Tools.lockTarget = true
-    end
+    if AMM.playerInPhoto then
+      ImGui.SameLine()
+      if ImGui.Button("Target V", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+        Tools:SetCurrentTarget(Tools:GetVTarget())
+        Tools.lockTarget = true
+      end
 
-    local buttonLabel = "Lock Look At Camera"
-    if Tools.lookAtLocked then
-      buttonLabel = "Unlock Look At Camera"
-    end
+      local buttonLabel = "Lock Look At Camera"
+      if Tools.lookAtLocked then
+        buttonLabel = "Unlock Look At Camera"
+      end
 
-    if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
-      Tools:ToggleLookAt()
-    end
+      if ImGui.Button(buttonLabel, Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+        Tools:ToggleLookAt()
+      end
 
-    Tools.savePhotoModeToggles = ImGui.Checkbox("Save Toggles State", Tools.savePhotoModeToggles)
+      ImGui.SameLine()
+      if ImGui.Button("Target Nibbles", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+        Tools:SetCurrentTarget(Tools:GetNibblesTarget())
+        Tools.lockTarget = true
+      end
 
-    if ImGui.IsItemHovered() then
-      ImGui.SetTooltip("This will save Makeup, Piercing and Seamfix toggles state until you close the game.")
+      Tools.savePhotoModeToggles = ImGui.Checkbox("Save Toggles State", Tools.savePhotoModeToggles)
+
+      if ImGui.IsItemHovered() then
+        ImGui.SetTooltip("This will save Makeup, Piercing and Seamfix toggles state until you close the game.")
+      end
     end
   else
     local buttonLabel = "Disable Passive Mode"
@@ -235,7 +279,7 @@ function Tools:DrawVActions()
 
     ImGui.SameLine()
     if ImGui.Button("Toggle V Head", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-      Tools:ToggleHead()
+      Tools:ToggleHead(true)
     end
 
     if AMM.userSettings.experimental then
@@ -252,6 +296,7 @@ function Tools:DrawVActions()
         for i, cam in ipairs(Tools.TPPCameraOptions) do
           if ImGui.Selectable(cam.name.."##"..i, (cam == selectedCamera.name)) then
             Tools.selectedTPPCamera = i
+            AMM:UpdateSettings()
           end
         end
         ImGui.EndCombo()
@@ -259,19 +304,16 @@ function Tools:DrawVActions()
     end
 
     ImGui.Spacing()
-    
 
-    if GetVersion() == "v1.15.0" then
-      Tools.animatedHead, clicked = ImGui.Checkbox("Animated Head in Photo Mode", Tools.animatedHead)
+    Tools.animatedHead, clicked = ImGui.Checkbox("Animated Head in Photo Mode", Tools.animatedHead)
 
-      if clicked then
-        Tools:ToggleAnimatedHead(Tools.animatedHead)
-        AMM:UpdateSettings()
-      end
+    if clicked then
+      Tools:ToggleAnimatedHead(Tools.animatedHead)
+      AMM:UpdateSettings()
+    end
 
-      if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("Photo mode expressions won't work while Animated Head is enabled.")
-      end
+    if ImGui.IsItemHovered() then
+      ImGui.SetTooltip("Photo mode expressions won't work while Animated Head is enabled.")
     end
 
     -- ImGui.Spacing()
@@ -360,7 +402,7 @@ function Tools:CheckGodModeIsActive()
   if AMM.player ~= nil then
     local playerID = AMM.player:GetEntityID()
     local currentHP = Game.GetStatsSystem():GetStatValue(playerID, "Health")
-    if currentHP < 0 then Tools.godModeToggle = true 
+    if currentHP < 0 then Tools.godModeToggle = true
     elseif AMM.userSettings.godModeOnLaunch then
       Tools:ToggleGodMode()
     end
@@ -400,20 +442,21 @@ function Tools:ToggleAnimatedHead(animated)
   Tools.animatedHead = animated
   AMM.userSettings.animatedHead = animated
 
-  local isLegacy = false
-  if GetVersion() == "v1.15.0" then isLegacy = true end
+  if GetVersion() == "v1.15.0" then
+    local isFemale = Util:GetPlayerGender()
+    if isFemale == "_Female" then gender = 'wa' else gender = 'ma' end
+    if animated then mode = "tpp" else mode = "photomode" end
 
-  local isFemale = Util:GetPlayerGender()
-  if isFemale == "_Female" then gender = 'wa' else gender = 'ma' end
-  if animated then
-    if isLegacy then mode = "tpp" else mode = "photomode" end
+    local headItem = f("player_%s_%s_head", gender, mode)
+
+    TweakDB:SetFlat(f("Items.Player%sPhotomodeHead.entityName", gender:gsub("^%l", string.upper)), headItem)
   else
-    if isLegacy then mode = "photomode" else mode = "tpp" end
+    local mode = "TPP_photomode"
+    if animated then mode = "TPP" end
+
+    TweakDB:SetFlat("Items.PlayerMaPhotomodeHead.appearanceName", mode)
+    TweakDB:SetFlat("Items.PlayerWaPhotomodeHead.appearanceName", mode)
   end
-
-  local headItem = f("player_%s_%s_head", gender, mode)
-
-  TweakDB:SetFlat(f("Items.Player%sPhotomodeHead.entityName", gender:gsub("^%l", string.upper)), headItem)
 end
 
 function Tools:ToggleTPPCamera()
@@ -444,35 +487,86 @@ function Tools:ToggleTPPCamera()
   Tools:ToggleHead()
 end
 
-function Tools:ToggleHead()
+function Tools:ToggleHead(userActivated)
+  if AMM.playerInVehicle and userActivated then
+    return
+  end
+
+  Tools.tppHead = not Tools.tppHead
 
   local isFemale = Util:GetPlayerGender()
-	if isFemale == "_Female" then gender = 'Wa' else gender = 'Ma' end
+  if isFemale == "_Female" then gender = 'Wa' else gender = 'Ma' end
 
   local headItem = f("Items.CharacterCustomization%sHead", gender)
 
   local ts = Game.GetTransactionSystem()
-  local gameItemID = GetSingleton('gameItemID')
   local tdbid = TweakDBID.new(headItem)
-  local itemID = gameItemID:FromTDBID(tdbid)
+  local itemID = ItemID.FromTDBID(tdbid)
 
   if ts:HasItem(Game.GetPlayer(), itemID) == false then
     Game.AddToInventory(headItem, 1)
   end
 
-  Game.EquipItemOnPlayer(headItem, "TppHead")
+  -- ts:AddItemToSlot(AMM.player, EquipmentSystem.GetPlacementSlot(itemID), itemID)
 
-  if ts:GetItemInSlot(AMM.player, TweakDBID.new("AttachmentSlots.TppHead")) ~= nil then
-    ts:RemoveItemFromSlot(AMM.player, TweakDBID.new('AttachmentSlots.TppHead'), true, true, true)
-    Game.EquipItemOnPlayer("Items.PlayerFppHead", "TppHead")
+  if Tools.tppHead then
+    Cron.Every(0.001, { tick = 1 }, function(timer)
+
+      timer.tick = timer.tick + 1
+
+      if timer.tick > 20 then
+        Cron.Halt(timer)
+      end
+
+      Cron.After(0.01, function()
+        ts:RemoveItemFromSlot(AMM.player, TweakDBID.new('AttachmentSlots.TppHead'), true, true, true)
+      end)
+
+      Cron.After(0.1, function()
+        Game.EquipItemOnPlayer(headItem, "TppHead")
+      end)
+    end)
   else
-    Game.EquipItemOnPlayer(headItem, "TppHead")
+    if ts:GetItemInSlot(AMM.player, TweakDBID.new("AttachmentSlots.TppHead")) ~= nil then
+      ts:RemoveItemFromSlot(AMM.player, TweakDBID.new('AttachmentSlots.TppHead'), true, true, true)
+      Game.EquipItemOnPlayer("Items.PlayerFppHead", "TppHead")
+    end
   end
+end
+
+function Tools:GetNibblesTarget()
+  local nibbles
+
+  Util:GetAllInRange(30, true, true, function(entity)
+    if entity then
+      local entityID = AMM:GetScanID(entity)
+      if entityID and Util:CheckNibblesByID(entityID) then
+        nibbles = entity
+      end
+    end
+	end)
+
+  if not nibbles then
+    if Util:CheckNibblesByID(Tools.currentTarget.id) then
+      return Tools.currentTarget
+    else
+      return nil
+    end
+  end
+
+  return AMM:NewTarget(nibbles, "NPCPuppet", AMM:GetScanID(nibbles), AMM:GetNPCName(nibbles),AMM:GetScanAppearance(nibbles), nil)
 end
 
 function Tools:GetVTarget()
   local entity = Tools.photoModePuppet
-  if not entity then return nil end
+  if not entity then
+    if Util:CheckVByID(Tools.currentTarget.id) then
+      return Tools.currentTarget
+    else
+      return nil
+    end
+  end
+
   return AMM:NewTarget(entity, "NPCPuppet", AMM:GetScanID(entity), AMM:GetNPCName(entity),AMM:GetScanAppearance(entity), nil)
 end
 
@@ -484,9 +578,11 @@ function Tools:DrawTeleportActions()
 
   if ImGui.BeginCombo("Locations", Tools.selectedLocation.loc_name, ImGuiComboFlags.HeightLarge) then
     for i, location in ipairs(Tools:GetLocations()) do
-      if ImGui.Selectable(location.loc_name.."##"..i, (location == Tools.selectedLocation.loc_name)) then
-        if location.loc_name:match("%-%-%-%-") == nil then
-          Tools.selectedLocation = location
+      if location.loc_name then
+        if ImGui.Selectable(location.loc_name.."##"..i, (location == Tools.selectedLocation.loc_name)) then
+          if location.loc_name:match("%-%-%-%-") == nil then
+            Tools.selectedLocation = location
+          end
         end
       end
     end
@@ -538,7 +634,7 @@ function Tools:DrawTeleportActions()
     end
   end
 
-  if AMM.TeleportMod ~= '' then
+  if AMM.TeleportMod then
     ImGui.Spacing()
     Tools.useTeleportAnimation, clicked = ImGui.Checkbox("Use Teleport Animation", Tools.useTeleportAnimation)
     if clicked then
@@ -567,7 +663,7 @@ function Tools:DrawTeleportActions()
         Tools.shareLocationName = ''
       end
     else
-      Tools.shareLocationName = ImGui.InputText("Name", Tools.shareLocationName, 30)
+      Tools.shareLocationName = ImGui.InputText("Name", Tools.shareLocationName, 50)
 
       if ImGui.Button("Save", style.halfButtonWidth + 8, style.buttonHeight) then
         if not(io.open(f("User/Locations/%s.json", Tools.shareLocationName), "r")) then
@@ -620,9 +716,16 @@ function Tools:GetLocations()
     table.insert(locations, {loc_name = '------------------------------'})
   end
 
-  for loc in db:nrows("SELECT * FROM locations ORDER BY loc_name ASC") do
-    table.insert(locations, loc)
+  if #Tools.defaultLocations == 0 then
+    for loc in db:nrows([[SELECT * FROM locations ORDER BY loc_name ASC]]) do
+      table.insert(Tools.defaultLocations, loc)
+    end
+  else
+    for _, loc in ipairs(Tools.defaultLocations) do
+      table.insert(locations, loc)
+    end
   end
+
   return locations
 end
 
@@ -704,8 +807,16 @@ end
 
 function Tools:GetUserLocations()
   local files = dir("./User/Locations")
-  local userLocations = {}
-  if #Tools.userLocations ~= #files then
+  local filesCount = #files
+
+  for _, file in ipairs(files) do
+    if string.find(file.name, '.txt') then
+      filesCount = filesCount - 1
+    end
+  end
+
+  if #Tools.userLocations ~= filesCount then
+    local userLocations = {}
     for _, loc in ipairs(files) do
       if string.find(loc.name, '.json') then
         local loc_name, x, y, z, w, yaw = Tools:LoadLocationData(loc.name)
@@ -738,560 +849,50 @@ function Tools:DrawNPCActions()
 
   AMM.UI:DrawCrossHair()
 
-  if Tools.currentNPC and Tools.currentNPC ~= '' and Tools.currentNPC.handle then
-    if not Game.FindEntityByID(Tools.currentNPC.handle:GetEntityID()) then
-      Tools.currentNPC = ''
+  if Tools.currentTarget and Tools.currentTarget ~= '' and Tools.currentTarget.handle then
+    if not Game.FindEntityByID(Tools.currentTarget.handle:GetEntityID()) then
+      Tools.currentTarget = ''
     end
   end
 
-  if target ~= nil or Tools.currentNPC ~= '' then
+  if target ~= nil or (Tools.currentTarget and Tools.currentTarget ~= '') then
 
-    AMM.UI:TextCenter("Movement", true)
-
-    if not Tools.lockTarget or Tools.currentNPC == '' then
-      Tools.lockTarget = false
-      if target == nil and Tools.currentNPC ~= '' and Tools.currentNPC.type ~= "Player" then
-        Tools.currentNPC = ''
-      elseif Tools.currentNPC == '' or (not(Tools.holdingNPC) and (target ~= nil and Tools.currentNPC.handle:GetEntityID().hash ~= target.handle:GetEntityID().hash)) then
-        Tools:SetCurrentTarget(target)
-      end
-
-      Tools.currentTargetComponents = nil
+    if not AMM.userSettings.floatingTargetTools then
+      AMM.UI:TextCenter("Movement", true)
     end
 
-    if Tools.currentNPC ~= '' then
-      ImGui.Text(Tools.currentNPC.name)
-    end
-
-    local buttonLabel = " Lock Target "
-    if Tools.lockTarget then
-      buttonLabel = " Unlock Target "
-    end
-    ImGui.SameLine()
-    if ImGui.SmallButton(buttonLabel) then
-      Tools.lockTarget = not Tools.lockTarget
-    end
-
-    local adjustmentValue = 0.01
-    if Tools.precisonMode then adjustmentValue = 0.001 end
-
-    local width = ImGui.GetWindowContentRegionWidth() - ImGui.CalcTextSize("Tilt/Rotation ")
-    ImGui.PushItemWidth(width)
-    Tools.npcUpDown, upDownUsed = ImGui.DragFloat("Up/Down", Tools.npcUpDown, adjustmentValue)
-    ImGui.PopItemWidth()
-
-    if upDownUsed and Tools.currentNPC ~= '' then
-      local pos = Tools.currentNPC.handle:GetWorldPosition()
-      pos = Vector4.new(pos.x, pos.y, Tools.npcUpDown, pos.w)
-      if Tools.currentNPC.type == 'entEntity' then
-        if not Tools.movingProp then
-          Tools:TeleportPropTo(Tools.currentNPC, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-        end
-      elseif Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC() then
-        Tools:TeleportNPCTo(Tools.currentNPC.handle, pos, Tools.npcRotation[3])
-      else
-        Game.GetTeleportationFacility():Teleport(Tools.currentNPC.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-      end
-    end
-
-    ImGui.PushItemWidth((width / 2) - 4)
-    Tools.npcLeft, leftUsed = ImGui.DragFloat("", Tools.npcLeft, adjustmentValue)
-
-    if Tools.relativeMode and ImGui.IsItemDeactivatedAfterEdit() then
-      Tools.npcLeft = 0
-    end
-
-    local sliderLabel = "X/Y"
-
-    if Tools.relativeMode then
-      sliderLabel = "F-B/L-R"
-    end
-
-    ImGui.SameLine()
-    Tools.npcRight, rightUsed = ImGui.DragFloat(sliderLabel, Tools.npcRight, adjustmentValue)
-
-    if Tools.relativeMode and ImGui.IsItemDeactivatedAfterEdit() then
-      Tools.npcRight = 0
-    end
-
-    ImGui.PopItemWidth()
-
-    local forward = {x = 0, y = 0, z = 0}
-    local right = {x = 0, y = 0, z = 0}
-    local pos = nil
-
-    if Tools.currentNPC ~= '' then
-      if Tools.relativeMode then
-        forward = Tools.currentNPC.handle:GetWorldForward()
-        right = Tools.currentNPC.handle:GetWorldRight()
+    if AMM.userSettings.floatingTargetTools then
+      local buttonLabel = "Open Target Tools"
+      if Tools.movementWindow.open then
+        buttonLabel = "Close Target Tools"
       end
 
-      pos = Tools.currentNPC.handle:GetWorldPosition()
-
-      if leftUsed then
-        local x = Tools.npcLeft
-        local targetX = Tools.npcLeft
-
-        if Tools.relativeMode then
-          targetX = pos.x
-        end
-
-        pos = Vector4.new(targetX + (forward.x * x), pos.y + (forward.y * x), pos.z + (forward.z * x), pos.w)
-      end
-
-      if rightUsed then
-        local y = Tools.npcRight
-        local targetY = Tools.npcRight
-
-        if Tools.relativeMode then
-          targetY = pos.y
-        end
-
-        pos = Vector4.new(pos.x + (right.x * y), targetY + (right.y * y), pos.z + (right.z * y), pos.w)
-      end
-    end
-
-    if leftUsed or rightUsed and Tools.currentNPC ~= '' then
-      if Tools.currentNPC.type == 'entEntity' then
-        if not Tools.movingProp then
-          Tools:TeleportPropTo(Tools.currentNPC, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-        end
-      elseif Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC() then
-        Tools:TeleportNPCTo(Tools.currentNPC.handle, pos, Tools.npcRotation[3])
-      else
-        Game.GetTeleportationFacility():Teleport(Tools.currentNPC.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-      end
-    end
-
-    ImGui.PushItemWidth(width)
-
-    local rotationValue = 0.1
-    if Tools.precisonMode then rotationValue = 0.01 end
-
-    if Tools.currentNPC ~= '' and (Tools.currentNPC.type ~= 'entEntity' and Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC()) then
-      Tools.npcRotation[3], rotationUsed = ImGui.SliderFloat("Rotation", Tools.npcRotation[3], -180, 180)
-    elseif Tools.currentNPC ~= '' then
-      Tools.npcRotation, rotationUsed = ImGui.DragFloat3("Tilt/Rotation", Tools.npcRotation, 0.1)
-    end
-
-    if rotationUsed and Tools.currentNPC ~= '' then
-      local pos = Tools.currentNPC.handle:GetWorldPosition()
-      if Tools.currentNPC.type == 'entEntity' then
-        if not Tools.movingProp then
-          Tools:TeleportPropTo(Tools.currentNPC, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-        end
-      elseif Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC() then
-        Tools:TeleportNPCTo(Tools.currentNPC.handle, pos, Tools.npcRotation[3])
-      else
-        Game.GetTeleportationFacility():Teleport(Tools.currentNPC.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-      end
-    end
-
-    ImGui.Spacing()
-    Tools.precisonMode = ImGui.Checkbox("Precision Mode", Tools.precisonMode)
-
-    ImGui.SameLine()
-    Tools.relativeMode, modeChange = ImGui.Checkbox("Relative Mode", Tools.relativeMode)
-
-    if modeChange then
-      if Tools.relativeMode then
-        Tools.npcLeft = 0
-        Tools.npcRight = 0
-      else
-        local pos = Tools.currentNPC.handle:GetWorldPosition()
-        Tools.npcLeft = pos.x
-        Tools.npcRight = pos.y
-      end
-    end
-
-    ImGui.PopItemWidth()
-    AMM.UI:Spacing(3)
-
-    local buttonLabel = "Save Position"
-    if Tools.savedPosition ~= '' then
-      buttonLabel = "Restore Position"
-    end
-
-    if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
-      if Tools.savedPosition ~= '' then
-        Tools:SetTargetPosition(Tools.savedPosition.pos, Tools.savedPosition.angles)
-      else
-        Tools.savedPosition = {pos = Tools.currentNPC.handle:GetWorldPosition(), angles = GetSingleton('Quaternion'):ToEulerAngles(Tools.currentNPC.handle:GetWorldOrientation())}
-      end
-    end
-
-    if Tools.savedPosition ~= '' then
-      if ImGui.Button("Clear Saved Position", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-        Tools.savedPosition = ''
-      end
-    end
-
-    ImGui.Spacing()
-
-    if ImGui.Button("Reset Position", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-      local pos = AMM.player:GetWorldPosition()
-
-      if Tools.currentNPC.type == "vehicle" then
-        local heading = AMM.player:GetWorldForward()
-        pos = Vector4.new(pos.x + (heading.x * 2), pos.y + (heading.y * 2), pos.z + heading.z, pos.w + heading.w)
-      end
-
-      Tools:SetTargetPosition(pos)
-    end
-
-    AMM.UI:Spacing(3)
-
-    if not AMM.playerInPhoto and Tools.currentNPC ~= '' and Tools.currentNPC.type ~= 'entEntity' then
-
-      local buttonLabel = "Pick Up Target"
-      if Tools.holdingNPC then
-        buttonLabel = "Drop Target"
-      end
-
-      local buttonWidth = Tools.style.buttonWidth
-      if Tools.currentNPC.handle:IsNPC() then
-        buttonWidth = Tools.style.halfButtonWidth
-      end
-
-      if ImGui.Button(buttonLabel, buttonWidth, Tools.style.buttonHeight) then
-        Tools.holdingNPC = not Tools.holdingNPC
-        Tools.lockTarget = true
-
-        local npcHandle = Tools.currentNPC.handle
-
-        if npcHandle:IsNPC() then
-          Tools:FreezeNPC(npcHandle, true)
-          npcHandle:GetAIControllerComponent():DisableCollider()
-        end
-
-        Cron.Every(0.000001, function(timer)
-          local pos = AMM.player:GetWorldPosition()
-          local heading = AMM.player:GetWorldForward()
-          local currentPos = Tools.currentNPC.handle:GetWorldPosition()
-          local newPos = Vector4.new(pos.x + (heading.x * 2), pos.y + (heading.y * 2), currentPos.z, pos.w)
-
-          if Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC() then
-            Tools:TeleportNPCTo(npcHandle, newPos, Tools.npcRotation[3])
-          else
-            Game.GetTeleportationFacility():Teleport(npcHandle, newPos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
-          end
-
-          if Tools.holdingNPC == false then
-            if npcHandle:IsNPC() then
-              Tools:FreezeNPC(npcHandle, false)
-              npcHandle:GetAIControllerComponent():EnableCollider()
-            end
-            Cron.Halt(timer)
-          end
-        end)
-      end
-
-      ImGui.SameLine()
-    end
-
-    if Tools.currentNPC ~= '' and (Tools.currentNPC.type ~= 'entEntity' and Tools.currentNPC.handle:IsNPC()) then
-
-      if not AMM.playerInPhoto or AMM.userSettings.freezeInPhoto then
-        local buttonLabel = " Freeze Target "
-        if Tools.frozenNPCs[tostring(Tools.currentNPC.handle:GetEntityID().hash)] ~= nil then
-          buttonLabel = " Unfreeze Target "
-        end
-
-        local buttonWidth = Tools.style.halfButtonWidth
-        if AMM.playerInPhoto then buttonWidth = Tools.style.buttonWidth end
-
-        if ImGui.Button(buttonLabel, buttonWidth, Tools.style.buttonHeight) then
-          if buttonLabel == " Freeze Target " then
-            Tools:FreezeNPC(Tools.currentNPC.handle, true)
-            Tools.frozenNPCs[tostring(Tools.currentNPC.handle:GetEntityID().hash)] = 'active'
-          else
-            Tools:FreezeNPC(Tools.currentNPC.handle, false)              
-            Tools.frozenNPCs[tostring(Tools.currentNPC.handle:GetEntityID().hash)] = nil
-          end
-        end
-
-        if AMM.playerInPhoto then
-          if ImGui.IsItemHovered() then
-            ImGui.BeginTooltip()
-            ImGui.PushTextWrapPos(500)
-            ImGui.TextWrapped("Unfreeze Target will skip frames for custom animation mods in Photo Mode if not using IGCS. For full Freeze/Unfreeze functionality unpause using IGCS.")
-            ImGui.PopTextWrapPos()
-            ImGui.EndTooltip()
-          end
-        end
-
-        if not AMM.playerInPhoto and not Tools.currentNPC.handle.isPlayerCompanionCached then
-
-          if Tools:ShouldCrouchButtonAppear(Tools.currentNPC) then
-            local buttonLabel = " Change To Crouch Stance "
-            if Tools.isCrouching then
-              buttonLabel = " Change To Stand Stance "
-            end
-
-            if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
-              Tools.isCrouching = not Tools.isCrouching
-
-              local handle = Tools.currentNPC.handle
-
-              if Tools.isCrouching then
-                local pos = handle:GetWorldPosition()
-                pos = Vector4.new(pos.x, pos.y, pos.z, pos.w)
-                Util:MoveTo(handle, pos, nil, true)
-              else                
-                Tools.currentNPC.parameters = AMM:GetAppearance(Tools.currentNPC)
-
-                local currentNPC = Tools.currentNPC
-                if currentNPC.type ~= 'Spawn' then
-                  for _, spawn in pairs(AMM.Spawn.spawnedNPCs) do
-                    if currentNPC.id == spawn.id or Util:CheckVByID(currentNPC.id) then currentNPC = spawn break end
-                  end
-                end
-
-                Tools.currentNPC = ''
-                AMM.Spawn:DespawnNPC(currentNPC)
-                
-                Cron.After(0.5, function()
-                  AMM.Spawn:SpawnNPC(currentNPC)
-                end)
-              end
-            end
-          end
-        end
-      end
-
-      AMM.UI:Spacing(8)
-
-      local targetIsPlayer = Tools.currentNPC.type == "Player"
-      if not AMM.playerInPhoto or (AMM.playerInPhoto and targetIsPlayer and Tools.animatedHead) then
-        AMM.UI:TextCenter("Facial Expression", true)
-        ImGui.Spacing()
-
-        local isSelecting = false
-
-        if ImGui.BeginCombo("Expressions", Tools.selectedFace.name) then
-          for i, face in ipairs(Tools.expressions) do
-            if ImGui.Selectable(face.name, (face.name == Tools.selectedFace.name)) then
-              Tools.selectedFace = face
-              Tools.activatedFace = false
-              isSelecting = true
-            end
-          end
-          ImGui.EndCombo()
-        end
-
-        if not isSelecting and Tools.selectedFace.name ~= "Select Expression" and not Tools.activatedFace then
-          if Tools.lookAtTarget then
-            local ent = Game.FindEntityByID(Tools.lookAtTarget.handle:GetEntityID())
-            if not ent then Tools.lookAtTarget = nil end
-          end
-          Tools:ActivateFacialExpression(Tools.currentNPC, Tools.selectedFace, Tools.upperBodyMovement, Tools.lookAtV, Tools.lookAtTarget)
-        end
-
-        ImGui.Spacing()
-
-        if not AMM.playerInPhoto then
-
-          Tools.upperBodyMovement, clicked = ImGui.Checkbox("Upper Body Movement", Tools.upperBodyMovement)
-
-          ImGui.SameLine()
-          Tools.lookAtV = ImGui.Checkbox("Look At ", Tools.lookAtV)
-
-          ImGui.SameLine()
-          local lookAtTargetName = "V"
-          if Tools.lookAtTarget ~= nil then
-            lookAtTargetName = Tools.lookAtTarget.name
-          end
-
-          AMM.UI:TextColored(lookAtTargetName)
-
-          AMM.UI:Spacing(3)
-
-          if ImGui.Button("Change Look At Target", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-            if Tools.currentNPC ~= '' then
-              Tools.lookAtTarget = Tools.currentNPC
-            end
-          end
-
-          if ImGui.Button("Reset Look At Target", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-            if target ~= nil then
-              Tools.lookAtTarget = nil
-            end
-          end
-        end
-      end
-
-      if AMM.userSettings.experimental and Tools.currentNPC.handle:IsNPC() then
-
-        local es = Game.GetScriptableSystemsContainer():Get(CName.new("EquipmentSystem"))
-        local weapon = es:GetActiveWeaponObject(AMM.player, 39)
-        local npcHasWeapon = Tools.currentNPC.handle:HasPrimaryOrSecondaryEquipment()
-
-        if npcHasWeapon or weapon then
-          AMM.UI:Spacing(8)
-          AMM.UI:TextCenter("Equipment", true)
-          ImGui.Spacing()
-        end
-
-        if npcHasWeapon then
-          if ImGui.Button("Toggle Primary Weapon", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-            local npcHash = tostring(Tools.currentNPC.handle:GetEntityID().hash)
-            if Tools.equippedWeaponNPCs[npcHash] == nil then
-              Tools.equippedWeaponNPCs[npcHash] = {primary = true, secondary = false}
-            else
-              Tools.equippedWeaponNPCs[npcHash].primary = not Tools.equippedWeaponNPCs[npcHash].primary
-            end
-
-            Util:EquipPrimaryWeaponCommand(Tools.currentNPC.handle, Tools.equippedWeaponNPCs[npcHash].primary)
-          end
-
-          ImGui.SameLine()
-          if ImGui.Button("Toggle Secondary Weapon", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-            local npcHash = tostring(Tools.currentNPC.handle:GetEntityID().hash)
-            if Tools.equippedWeaponNPCs[npcHash] == nil then
-              Tools.equippedWeaponNPCs[npcHash] = {primary = false, secondary = true}
-            else
-              Tools.equippedWeaponNPCs[npcHash].secondary = not Tools.equippedWeaponNPCs[npcHash].secondary
-            end
-
-            Util:EquipSecondaryWeaponCommand(Tools.currentNPC.handle, Tools.equippedWeaponNPCs[npcHash].secondary)
-          end
-        end
-
-        if weapon then
-          if ImGui.Button("Give Current Equipped Weapon", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-            local weaponTDBID = weapon:GetItemID().tdbid
-            Util:EquipGivenWeapon(Tools.currentNPC.handle, weaponTDBID, Tools.forceWeapon)
-          end
-
-          if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Note: Out of combat, the NPC will unequip the given weapon immediately.")
-          end
-
-          ImGui.Spacing()
-          Tools.forceWeapon = ImGui.Checkbox("Force Given Weapon", Tools.forceWeapon)
-
-          if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("This will stop the NPC from unequipping your given weapon. Note: the NPC will still unequip at will during combat.")
-          end
-        end
-      end
-    elseif Tools.currentNPC ~= '' then
-
-      if Tools.currentNPC.handle:FindComponentByName("amm_light") then
-        AMM.UI:Spacing(8)
-
-        AMM.UI:TextCenter("Light Control", true)
-
-        if ImGui.Button("Toggle Light", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-          AMM.Light:ToggleLight(Tools.currentNPC)
-        end
-
-        ImGui.SameLine()
-        local buttonLabel ="Open Light Settings"
-        if AMM.Light.isEditing then
-          buttonLabel = "Update Light Target"
-        end
-
-        if ImGui.Button(buttonLabel, Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-          AMM.Light:Setup(Tools.currentNPC)
-          AMM.Light.isEditing = true
-        end
-      end
-
-      if Tools.currentTargetComponents == nil then
-        Tools.currentTargetComponents = AMM.Props:CheckForValidComponents(Tools.currentNPC.handle)
-      end
-
-      local components = Tools.currentTargetComponents
-
-      AMM.UI:Spacing(8)
-
-      AMM.UI:TextCenter("Scale", true)
-      
-      if components then
-        
-        local scaleChanged = false
-        local scaleWidth = ImGui.GetWindowContentRegionWidth()
-        if Tools.proportionalMode then
-          ImGui.PushItemWidth(scaleWidth)
-          Tools.currentNPC.scale.x, scaleChanged = ImGui.DragFloat("##scale", Tools.currentNPC.scale.x, 0.1)
-
-          if scaleChanged then 
-            Tools.currentNPC.scale.y = Tools.currentNPC.scale.x
-            Tools.currentNPC.scale.z = Tools.currentNPC.scale.x
-          end
+      if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
+        if Tools.movementWindow.open then
+          Tools.movementWindow.open = false
+          Tools.movementWindow.isEditing = false
         else
-          ImGui.PushItemWidth((scaleWidth / 3) - 4)
-          Tools.currentNPC.scale.x, used = ImGui.DragFloat("##scaleX", Tools.currentNPC.scale.x, 0.1)
-          if used then scaleChanged = true end
-          ImGui.SameLine()
-          Tools.currentNPC.scale.y, used = ImGui.DragFloat("##scaleY", Tools.currentNPC.scale.y, 0.1)
-          if used then scaleChanged = true end
-          ImGui.SameLine()
-          Tools.currentNPC.scale.z, used = ImGui.DragFloat("##scaleZ", Tools.currentNPC.scale.z, 0.1)
-          if used then scaleChanged = true end
-        end
-
-        ImGui.PopItemWidth()
-
-        if scaleChanged then
-          Tools:SetScale(components, Tools.currentNPC.scale, Tools.proportionalMode)
-        end
-
-        Tools.proportionalMode, proportionalModeChanged = ImGui.Checkbox("Proportional Mode", Tools.proportionalMode)
-
-        if proportionalModeChanged then
-          Tools:SetScale(components, Tools.currentNPC.scale, Tools.proportionalMode)
-        end
-
-        if ImGui.Button("Reset Scale", Tools.style.buttonWidth, Tools.style.buttonHeight) then
-          Tools:SetScale(components, Tools.currentNPC.defaultScale, true)
-          Tools.currentNPC.scale = {
-            x = Tools.currentNPC.defaultScale.x,
-            y = Tools.currentNPC.defaultScale.y,
-            z = Tools.currentNPC.defaultScale.z,
-          }
-        end
-      else
-        AMM.UI:Spacing(3)
-        AMM.UI:TextCenter("Scaling Not Available")
-      end
-
-      AMM.UI:Spacing(8)
-
-      local lookAtTargetName = "V"
-      if Tools.lookAtTarget ~= nil then
-        lookAtTargetName = Tools.lookAtTarget.name
-      end
-
-      ImGui.Text("Current Look At Target:")
-      ImGui.SameLine()
-      AMM.UI:TextColored(lookAtTargetName)
-
-      if ImGui.Button("Change Look At Target", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-        if Tools.currentNPC ~= '' then
-          Tools.lookAtTarget = Tools.currentNPC
+          Tools:OpenMovementWindow()
         end
       end
-
-      ImGui.SameLine()
-      if ImGui.Button("Reset Look At Target", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-        if target ~= nil then
-          Tools.lookAtTarget = nil
-        end
-      end
+    else
+      Tools.movementWindow.open = true
+      Tools:DrawMovementWindow()
     end
   else
-    ImGui.Text("")
+    AMM.UI:Spacing(3)
+
     if AMM.playerInPhoto then
       AMM.UI:TextCenter("Target V or NPC to see More Actions")
     else
       AMM.UI:TextCenter("Target NPC or Prop to see More Actions")
     end
+
+    AMM.UI:Spacing(4)
   end
 
   if not AMM.playerInPhoto then
-    AMM.UI:Spacing(8)
+    AMM.UI:Spacing(4)
 
     AMM.UI:TextCenter("General Actions", true)
     ImGui.Spacing()
@@ -1303,7 +904,7 @@ function Tools:DrawNPCActions()
     end
 
     if ImGui.Button("All Friendly", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-      Tools:UseGeneralAction(function(ent) Tools:SetNPCAttitude(ent, "friendly") end, 10)      
+      Tools:UseGeneralAction(function(ent) Tools:SetNPCAttitude(ent, "friendly") end, 10)
     end
 
     ImGui.SameLine()
@@ -1312,7 +913,7 @@ function Tools:DrawNPCActions()
     end
 
     if ImGui.Button("All Fake Die", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
-      Tools:UseGeneralAction(function(ent) ent.handle:SendAIDeathSignal() end, 20) 
+      Tools:UseGeneralAction(function(ent) ent.handle:SendAIDeathSignal() end, 20)
     end
 
     ImGui.SameLine()
@@ -1332,77 +933,118 @@ function Tools:DrawNPCActions()
 end
 
 function Tools:SetTargetPosition(pos, angles)
-  if Tools.currentNPC.type == 'entEntity' then
+  if Tools.currentTarget.type == 'entEntity' then
     if not Tools.movingProp then
-      Tools:TeleportPropTo(Tools.currentNPC, pos, angles or EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+      Tools:TeleportPropTo(Tools.currentTarget, pos, angles or EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
     end
-  elseif Tools.currentNPC.type ~= 'Player' and Tools.currentNPC.handle:IsNPC() then
-    Tools:TeleportNPCTo(Tools.currentNPC.handle, pos, angles or Tools.npcRotation[3])
+  elseif Tools.currentTarget.type ~= 'Player' and Tools.currentTarget.handle:IsNPC() then
+    Tools:TeleportNPCTo(Tools.currentTarget.handle, pos, angles or Tools.npcRotation[3])
   else
-    Game.GetTeleportationFacility():Teleport(Tools.currentNPC.handle, pos, angles or EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+    Game.GetTeleportationFacility():Teleport(Tools.currentTarget.handle, pos, angles or EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
   end
 
   Cron.After(0.2, function()
-    Tools:SetCurrentTarget(Tools.currentNPC)
+    local hash = Tools.currentTarget.hash
+    if AMM.Poses.activeAnims[hash] then
+      local anim = AMM.Poses.activeAnims[hash]
+      AMM.Poses:RestartAnimation(anim)
+    end
+
+    Tools:SetCurrentTarget(Tools.currentTarget)
   end)
 end
 
 function Tools:ClearTarget()
   Tools.lockTarget = false
-  Tools.currentNPC = ''
+  Tools.currentTarget = ''
+
+  if Tools.lockTargetPinID ~= nil then
+    Game.GetMappinSystem():UnregisterMappin(Tools.lockTargetPinID)
+  end
 end
 
-function Tools:SetCurrentTarget(target)
+function Tools:SetCurrentTarget(target, systemActivated)
   local pos, angles
-  Tools.currentNPC = target
+  target.appearance = AMM:GetAppearance(target)
+  Tools.currentTarget = AMM.Entity:new(target)  
+  
+  if not systemActivated then
+    local light = AMM.Light:GetLightData(target)
+    local workspotMarker = Util:IsCustomWorkspot(target.handle)
+
+    if Tools.lockTargetPinID ~= nil then
+      Game.GetMappinSystem():UnregisterMappin(Tools.lockTargetPinID)
+    end
+
+    if drawWindow and not workspotMarker and not light and Tools.lockTarget and target.type ~= 'entEntity' then
+      Tools.lockTargetPinID = Util:SetMarkerOverObject(target.handle, gamedataMappinVariant.FastTravelVariant)
+    end
+  end
+
+  local npcHash = tostring(Tools.currentTarget.handle:GetEntityID().hash)
+
+  if Tools.lookAtActiveNPCs[npcHash] then
+    local lookAtSettings = Tools.lookAtActiveNPCs[npcHash]
+    Tools.selectedLookAt = lookAtSettings.mode
+
+    if lookAtSettings.headSettings then
+      Tools.headStiffness = lookAtSettings.headSettings.weight
+      Tools.headPoseOverride = lookAtSettings.headSettings.suppress
+    end
+
+    if lookAtSettings.chestSettings then
+      Tools.chestStiffness = lookAtSettings.chestSettings.weight
+      Tools.chestPoseOverride = lookAtSettings.chestSettings.suppress
+    end
+  else
+    Tools:ResetLookAt()
+  end
 
   Tools.currentTargetComponents = nil
 
-  if Tools.currentNPC.type == 'entEntity' then
-    pos = Tools.currentNPC.parameters[1]
-    angles = Tools.currentNPC.parameters[2]
+  if Tools.currentTarget.type == 'entEntity' then
+    pos = Tools.currentTarget.parameters[1]
+    angles = Tools.currentTarget.parameters[2]
   else
-    pos = Tools.currentNPC.handle:GetWorldPosition()
-    angles = GetSingleton('Quaternion'):ToEulerAngles(Tools.currentNPC.handle:GetWorldOrientation())
+    pos = Tools.currentTarget.handle:GetWorldPosition()
+    angles = GetSingleton('Quaternion'):ToEulerAngles(Tools.currentTarget.handle:GetWorldOrientation())
   end
 
   Tools.npcRotation = {angles.roll, angles.pitch, angles.yaw}
-  Tools.npcUpDown = pos.z
 
   if Tools.relativeMode then
     Tools.npcLeft = 0
-    Tools.npcRight = 0  
+    Tools.npcRight = 0
+    Tools.npcUpDown = 0
   else
     Tools.npcLeft = pos.x
     Tools.npcRight = pos.y
+    Tools.npcUpDown = pos.z
   end
 end
 
-function Tools:ActivateFacialExpression(target, face, upperBody, lookAtV, lookAtTarget)
-  local lookAtTarget = lookAtTarget and lookAtTarget.handle or AMM.player
+function Tools:ActivateFacialExpression(target, face)
 
   Tools.activatedFace = true
-  local stimComp = target.handle:GetStimReactionComponent()
-  if stimComp then
-    stimComp:DeactiveLookAt()
+
+  local stimComp = target.handle:FindComponentByName("ReactionManager")
+  local animComp = target.handle:FindComponentByName("AnimationControllerComponent")
+
+  if stimComp and animComp then
     stimComp:ResetFacial(0)
 
     Cron.After(0.5, function()
-      local animCon = target.handle:GetAnimationControllerComponent()
       local animFeat = NewObject("handle:AnimFeature_FacialReaction")
       animFeat.category = face.category
       animFeat.idle = face.idle
-      animCon:ApplyFeature(CName.new("FacialReaction"), animFeat)
-      if lookAtV then
-        stimComp:ActivateReactionLookAt(lookAtTarget, false, true, 1, upperBody)
-      end
+      animComp:ApplyFeature(CName.new("FacialReaction"), animFeat)
     end)
   end
 end
 
 function Tools:TeleportPropTo(prop, pos, angles)
   prop.handle:Dispose()
-  
+
   local lastScale = nil
   if prop.scale and prop.scale ~= "nil" then
     lastScale = prop.scale
@@ -1421,6 +1063,9 @@ function Tools:TeleportPropTo(prop, pos, angles)
     if entity then
       prop.handle = entity
       prop.parameters = {pos, angles}
+      
+      -- Update Spawned Props dict just in case
+      AMM.Props.spawnedProps[prop.uniqueName()] = prop
 
       if lastScale then
         local components = AMM.Props:CheckForValidComponents(entity)
@@ -1436,36 +1081,86 @@ function Tools:TeleportPropTo(prop, pos, angles)
 end
 
 function Tools:TeleportNPCTo(targetPuppet, targetPosition, targetRotation)
-	local teleportCmd = NewObject('handle:AITeleportCommand')
-	teleportCmd.position = targetPosition
-	teleportCmd.rotation = targetRotation or 0.0
-	teleportCmd.doNavTest = false
+  local teleportCmd = NewObject('handle:AITeleportCommand')
+  teleportCmd.position = targetPosition
+  teleportCmd.rotation = targetRotation or 0.0
+  teleportCmd.doNavTest = false
 
-	targetPuppet:GetAIControllerComponent():SendCommand(teleportCmd)
+  targetPuppet:GetAIControllerComponent():SendCommand(teleportCmd)
 
-	return teleportCmd, targetPuppet
+  return teleportCmd, targetPuppet
 end
 
 function Tools:FreezeNPC(handle, freeze)
   if freeze then
+    if AMM.Poses.activeAnims[tostring(handle:GetEntityID().hash)] then
+      local anim = AMM.Poses.activeAnims[tostring(handle:GetEntityID().hash)]
+      Game.GetWorkspotSystem():StopInDevice(handle)
+    end
+  
     -- (reason: CName, dilation: Float, duration: Float, easeInCurve: CName, easeOutCurve: CName, ignoreGlobalDilation: Bool),
     handle:SetIndividualTimeDilation(CName.new("AMM"), 0.00001, 2.5, CName.new(""), CName.new(""), true)
+    Tools.frozenNPCs[tostring(Tools.currentTarget.handle:GetEntityID().hash)] = true
   else
     handle:SetIndividualTimeDilation(CName.new("AMM"), 1.0, 2.5, CName.new(""), CName.new(""), false)
+    Tools.frozenNPCs[tostring(Tools.currentTarget.handle:GetEntityID().hash)] = nil
+
+    if AMM.Poses.activeAnims[tostring(handle:GetEntityID().hash)] then
+      local anim = AMM.Poses.activeAnims[tostring(handle:GetEntityID().hash)]
+      
+      Cron.Every(0.1, {tick = 1}, function(timer)
+        if not Game.GetWorkspotSystem():IsActorInWorkspot(handle) then
+          Game.GetWorkspotSystem():PlayInDeviceSimple(anim.handle, handle, false, anim.comp)
+          Game.GetWorkspotSystem():SendJumpToAnimEnt(handle, anim.name, true)
+        end
+        
+        Cron.Halt(timer)
+      end)
+    end
   end
 end
 
+function Tools:PickupTarget(target)
+  Tools.holdingNPC = not Tools.holdingNPC
+  Tools.lockTarget = true
+
+  if target then
+    Tools:SetCurrentTarget(target)
+
+    local handle = target.handle
+
+    if handle:IsNPC() then
+      Tools:FreezeNPC(handle, true)
+      handle:GetAIControllerComponent():DisableCollider()
+    end
+
+    Cron.Every(0.000001, function(timer)
+      local pos = Game.GetPlayer():GetWorldPosition()
+      local heading = Game.GetPlayer():GetWorldForward()
+      local currentPos = handle:GetWorldPosition()
+      local offset = 1
+      if handle:IsNPC() then offset = 2 end
+      local newPos = Vector4.new(pos.x + (heading.x * offset), pos.y + (heading.y * offset), currentPos.z, pos.w)
+
+      if Tools.currentTarget.type ~= 'Player' and handle:IsNPC() then
+        Tools:TeleportNPCTo(handle, newPos, Tools.npcRotation[3])
+      else
+        Game.GetTeleportationFacility():Teleport(handle, newPos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+      end
+
+      if Tools.holdingNPC == false then
+        if handle:IsNPC() then
+          Tools:FreezeNPC(handle, false)
+          handle:GetAIControllerComponent():EnableCollider()
+        end
+        Cron.Halt(timer)
+      end
+    end)
+  end
+end
 
 function Tools:ProtectTarget(t)
-  local mappinData = NewObject('gamemappinsMappinData')
-  mappinData.mappinType = TweakDBID.new('Mappins.DefaultStaticMappin')
-  mappinData.variant = Enum.new('gamedataMappinVariant', 'QuestGiverVariant')
-  mappinData.visibleThroughWalls = true
-
-  local slot = CName.new('poi_mappin')
-  local offset = ToVector3{ x = 0, y = 0, z = 2 } -- Move the pin a bit up relative to the target
-
-  local newMappinID = Game.GetMappinSystem():RegisterMappinWithObject(mappinData, t.handle, slot, offset)
+  local newMappinID = Util:SetMarkerOverObject(t.handle, gamemappinVariant.QuestGiverVariant)
   Tools.protectedNPCs[target.handle:GetEntityID().hash] = newMappinID
 end
 
@@ -1504,6 +1199,704 @@ function Tools:SetScale(components, values, proportional)
   end
 end
 
+function Tools:OpenMovementWindow()
+  local sizeX = ImGui.GetWindowSize()
+  local x, y = ImGui.GetWindowPos()
+  if x < ImGui.GetFontSize() * 40 then
+    ImGui.SetNextWindowPos(x + (sizeX + 50), y - 40)
+  else
+    ImGui.SetNextWindowPos(x - (sizeX + 200), y - 40)
+  end
+
+  Tools.movementWindow.isEditing = true
+end
+
+function Tools:DrawMovementWindow()
+  if AMM.userSettings.floatingTargetTools then
+    Tools.movementWindow.open = ImGui.Begin("Target Tools", ImGuiWindowFlags.AlwaysAutoResize + ImGuiWindowFlags.NoCollapse)
+  end
+
+  if Tools.movementWindow.open then
+    Tools.movementWindow.isEditing = true
+
+    if not Tools.lockTarget or Tools.currentTarget == '' then
+      Tools.lockTarget = false
+      if target == nil and Tools.currentTarget ~= '' and Tools.currentTarget.type ~= "Player" then
+        Tools.currentTarget = ''
+      elseif Tools.currentTarget == '' or (not(Tools.holdingNPC) and (target ~= nil and Tools.currentTarget.handle:GetEntityID().hash ~= target.handle:GetEntityID().hash)) then
+        Tools:SetCurrentTarget(target, true)
+      end
+
+      Tools.currentTargetComponents = nil
+    end
+
+    if Tools.currentTarget and Tools.currentTarget ~= '' then
+      ImGui.PushTextWrapPos(300)
+      ImGui.TextWrapped(Tools.currentTarget.name)
+      ImGui.PopTextWrapPos()
+
+      if AMM.playerInPhoto and AMM.playerInVehicle and Tools.currentTarget.type == "Player" then
+        local mountedVehicle = Util:GetMountedVehicleTarget()
+        if mountedVehicle then Tools.currentTarget.handle = mountedVehicle.handle end
+      end
+    end
+
+    local buttonLabel = " Lock Target "
+    if Tools.lockTarget then
+      buttonLabel = " Unlock Target "
+    end
+
+    ImGui.SameLine()
+    if ImGui.SmallButton(buttonLabel) then
+      Tools.lockTarget = not Tools.lockTarget
+      Tools:SetCurrentTarget(Tools.currentTarget)
+    end
+
+    if AMM.userSettings.floatingTargetTools then
+      ImGui.SameLine(500)
+      if ImGui.Button(" Close Window ") then
+        Tools.movementWindow.open = false
+      end
+    end
+
+    local adjustmentValue = 0.01
+    if Tools.precisonMode then adjustmentValue = 0.001 end
+
+    local upDownRowWidth = ImGui.GetWindowContentRegionWidth() - ImGui.CalcTextSize("Tilt/Rotation ")
+
+    ImGui.PushItemWidth(upDownRowWidth)
+    Tools.npcUpDown, upDownUsed = ImGui.DragFloat("Up/Down", Tools.npcUpDown, adjustmentValue)
+    ImGui.PopItemWidth()
+
+    if ImGui.IsItemDeactivatedAfterEdit() then
+      local hash = Tools.currentTarget.hash
+      if AMM.Poses.activeAnims[hash] then
+        local anim = AMM.Poses.activeAnims[hash]
+        AMM.Poses:RestartAnimation(anim)
+      end
+    end
+
+    if Tools.relativeMode and ImGui.IsItemDeactivatedAfterEdit() then
+      Tools.npcUpDown = 0
+    end
+
+    local surfaceWiseRowWidth = (upDownRowWidth / 2) - 4
+
+    ImGui.PushItemWidth(surfaceWiseRowWidth)
+    Tools.npcLeft, leftUsed = ImGui.DragFloat("", Tools.npcLeft, adjustmentValue)
+
+    if ImGui.IsItemDeactivatedAfterEdit() then
+      local hash = Tools.currentTarget.hash
+      if AMM.Poses.activeAnims[hash] then
+        local anim = AMM.Poses.activeAnims[hash]
+        AMM.Poses:RestartAnimation(anim)
+      end
+    end
+
+    if Tools.relativeMode and ImGui.IsItemDeactivatedAfterEdit() then
+      Tools.npcLeft = 0
+    end
+
+    local sliderLabel = "X/Y"
+
+    if Tools.relativeMode then
+      sliderLabel = "F-B/L-R"
+    end
+
+    ImGui.SameLine()
+    Tools.npcRight, rightUsed = ImGui.DragFloat(sliderLabel, Tools.npcRight, adjustmentValue)
+
+    if ImGui.IsItemDeactivatedAfterEdit() then
+      local hash = Tools.currentTarget.hash
+      if AMM.Poses.activeAnims[hash] then
+        local anim = AMM.Poses.activeAnims[hash]
+        AMM.Poses:RestartAnimation(anim)
+      end
+    end
+
+    if Tools.relativeMode and ImGui.IsItemDeactivatedAfterEdit() then
+      Tools.npcRight = 0
+    end
+
+    ImGui.PopItemWidth() -- surfaceWiseRowidth
+
+    local forward = {x = 0, y = 0, z = 0}
+    local right = {x = 0, y = 0, z = 0}
+    local up = {x = 0, y = 0, z = 0}
+    local pos = nil
+
+    if Tools.currentTarget ~= '' then
+      if Tools.relativeMode then
+        forward = Tools.currentTarget.handle:GetWorldForward()
+        right = Tools.currentTarget.handle:GetWorldRight()
+        up = Tools.currentTarget.handle:GetWorldUp()
+      end
+
+      pos = Tools.currentTarget.handle:GetWorldPosition()
+
+      if upDownUsed then
+        local z = Tools.npcUpDown
+        local targetZ = Tools.npcUpDown
+
+        if Tools.relativeMode then
+          targetZ = pos.z
+        end
+
+        pos = Vector4.new(pos.x + (up.x * z), pos.y + (up.y * z), targetZ + (up.z * z), pos.w)
+      end
+
+      if leftUsed then
+        local x = Tools.npcLeft
+        local targetX = Tools.npcLeft
+
+        if Tools.relativeMode then
+          targetX = pos.x
+        end
+
+        pos = Vector4.new(targetX + (forward.x * x), pos.y + (forward.y * x), pos.z + (forward.z * x), pos.w)
+      end
+
+      if rightUsed then
+        local y = Tools.npcRight
+        local targetY = Tools.npcRight
+
+        if Tools.relativeMode then
+          targetY = pos.y
+        end
+
+        pos = Vector4.new(pos.x + (right.x * y), targetY + (right.y * y), pos.z + (right.z * y), pos.w)
+      end
+    end
+
+    if upDownUsed and Tools.currentTarget ~= '' then
+      if Tools.currentTarget.type == 'entEntity' then
+        if not Tools.movingProp then          
+          Tools:TeleportPropTo(Tools.currentTarget, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+        end
+      elseif Tools.currentTarget.type ~= 'Player' and Tools.currentTarget.handle:IsNPC() then
+        Tools:TeleportNPCTo(Tools.currentTarget.handle, pos, Tools.npcRotation[3])
+      else
+        Game.GetTeleportationFacility():Teleport(Tools.currentTarget.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+      end
+    end
+
+    if (leftUsed or rightUsed) and Tools.currentTarget ~= '' then
+      if Tools.currentTarget.type == 'entEntity' then
+        if not Tools.movingProp then
+          Tools:TeleportPropTo(Tools.currentTarget, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+        end
+      elseif Tools.currentTarget.type ~= 'Player' and Tools.currentTarget.handle:IsNPC() then
+        Tools:TeleportNPCTo(Tools.currentTarget.handle, pos, Tools.npcRotation[3])
+      else
+        Game.GetTeleportationFacility():Teleport(Tools.currentTarget.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+      end
+    end
+
+    local completelyMystifyingAdjustmentToKeepSlidersInBounds = 2
+    local rotationRowWidth = upDownRowWidth - completelyMystifyingAdjustmentToKeepSlidersInBounds
+    ImGui.PushItemWidth(rotationRowWidth)
+
+    local rotationValue = 0.1
+    if Tools.precisonMode then rotationValue = 0.01 end
+
+    if Tools.currentTarget ~= '' and (Tools.currentTarget.type ~= 'Prop' and Tools.currentTarget.type ~= 'entEntity' and Tools.currentTarget.type ~= 'Player' and Tools.currentTarget.handle:IsNPC()) then
+      Tools.npcRotation[3], rotationUsed = ImGui.SliderFloat("Rotation", Tools.npcRotation[3], -180, 180)
+    elseif Tools.currentTarget ~= '' then
+      Tools.npcRotation, rotationUsed = ImGui.DragFloat3("Tilt/Rotation", Tools.npcRotation, 0.1)
+    end
+
+    if ImGui.IsItemDeactivatedAfterEdit() then
+      local hash = Tools.currentTarget.hash
+      if AMM.Poses.activeAnims[hash] then
+        local anim = AMM.Poses.activeAnims[hash]
+        AMM.Poses:RestartAnimation(anim)
+      end
+    end
+
+    if rotationUsed and Tools.currentTarget ~= '' then
+      local pos = Tools.currentTarget.handle:GetWorldPosition()
+      if Tools.currentTarget.type == 'entEntity' then
+        if not Tools.movingProp then
+          Tools:TeleportPropTo(Tools.currentTarget, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+        end
+      elseif Tools.currentTarget.type ~= 'Player' and Tools.currentTarget.handle:IsNPC() then
+        Tools:TeleportNPCTo(Tools.currentTarget.handle, pos, Tools.npcRotation[3])
+      else
+        Game.GetTeleportationFacility():Teleport(Tools.currentTarget.handle, pos, EulerAngles.new(Tools.npcRotation[1], Tools.npcRotation[2], Tools.npcRotation[3]))
+      end
+    end
+
+    ImGui.Spacing()
+    Tools.precisonMode = ImGui.Checkbox("Precision Mode", Tools.precisonMode)
+
+    ImGui.SameLine()
+    Tools.relativeMode, modeChange = ImGui.Checkbox("Relative Mode", Tools.relativeMode)
+
+    ImGui.SameLine()
+    Tools.directMode, modeChange = ImGui.Checkbox("Direct Mode", Tools.directMode)
+
+    if modeChange then  
+      if Tools.directMode or not Tools.directMode then
+        Tools:ToggleDirectMode()
+      elseif Tools.relativeMode then
+        Tools.npcLeft = 0
+        Tools.npcRight = 0
+        Tools.npcUpDown = 0
+      else
+        local pos = Tools.currentTarget.handle:GetWorldPosition()
+        Tools.npcLeft = pos.x
+        Tools.npcRight = pos.y
+        Tools.npcUpDown = pos.z
+      end
+    end
+    
+    ImGui.PopItemWidth() -- rotationRowWidth
+
+    if Tools.directMode then
+      local speed = Tools.currentTarget.speed * 1000
+      speed = ImGui.DragFloat("Movement Speed", speed, 1, 1, 1000, "%.0f")
+      Tools.currentTarget.speed = speed / 1000
+    end
+
+    AMM.UI:Spacing(3)
+
+    local buttonLabel = "Save Position"
+    if Tools.savedPosition ~= '' then
+      buttonLabel = "Restore Position"
+    end
+
+    if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
+      if Tools.savedPosition ~= '' then
+        Tools:SetTargetPosition(Tools.savedPosition.pos, Tools.savedPosition.angles)
+      else
+        Tools.savedPosition = {pos = Tools.currentTarget.handle:GetWorldPosition(), angles = GetSingleton('Quaternion'):ToEulerAngles(Tools.currentTarget.handle:GetWorldOrientation())}
+      end
+    end
+
+    if Tools.savedPosition ~= '' then
+      if ImGui.Button("Clear Saved Position", Tools.style.buttonWidth, Tools.style.buttonHeight) then
+        Tools.savedPosition = ''
+      end
+    end
+
+    ImGui.Spacing()
+
+    if ImGui.Button("Reset Position", Tools.style.buttonWidth, Tools.style.buttonHeight) then
+      local pos = AMM.player:GetWorldPosition()
+
+      if Tools.currentTarget.type == "vehicle" then
+        local heading = AMM.player:GetWorldForward()
+        pos = Vector4.new(pos.x + (heading.x * 2), pos.y + (heading.y * 2), pos.z + heading.z, pos.w + heading.w)
+      end
+
+      Tools:SetTargetPosition(pos)
+    end
+
+    AMM.UI:Spacing(3)
+
+    if not AMM.playerInPhoto and Tools.currentTarget ~= '' and Tools.currentTarget.type ~= 'entEntity' then
+
+      local buttonLabel = "Pick Up Target"
+      if Tools.holdingNPC then
+        buttonLabel = "Drop Target"
+      end
+
+      local buttonWidth = Tools.style.buttonWidth
+      if Tools.currentTarget.handle:IsNPC() then
+        buttonWidth = Tools.style.halfButtonWidth
+      end
+
+      if ImGui.Button(buttonLabel, buttonWidth, Tools.style.buttonHeight) then
+        Tools:PickupTarget(Tools.currentTarget)
+      end
+
+      ImGui.SameLine()
+    end
+
+    if Tools.currentTarget ~= '' and (Tools.currentTarget.type ~= 'Prop' and Tools.currentTarget.type ~= 'entEntity'
+    and Tools.currentTarget.handle:IsNPC()) then
+
+      if not AMM.playerInPhoto or AMM.userSettings.freezeInPhoto then
+        local buttonLabel = " Freeze Target "
+        if Tools.frozenNPCs[tostring(Tools.currentTarget.handle:GetEntityID().hash)] then
+          buttonLabel = " Unfreeze Target "
+        end
+
+        local buttonWidth = Tools.style.halfButtonWidth
+        if AMM.playerInPhoto then buttonWidth = Tools.style.buttonWidth end
+
+        if ImGui.Button(buttonLabel, buttonWidth, Tools.style.buttonHeight) then
+          local frozen = not(Tools.frozenNPCs[tostring(Tools.currentTarget.handle:GetEntityID().hash)] == true)
+          Tools:FreezeNPC(Tools.currentTarget.handle, frozen)
+        end
+
+        if AMM.playerInPhoto then
+          if ImGui.IsItemHovered() then
+            ImGui.BeginTooltip()
+            ImGui.PushTextWrapPos(500)
+            ImGui.TextWrapped("Unfreeze Target will skip frames for custom animation mods in Photo Mode if not using IGCS. For full Freeze/Unfreeze functionality unpause using IGCS.")
+            ImGui.PopTextWrapPos()
+            ImGui.EndTooltip()
+          end
+        end
+
+        if not AMM.playerInPhoto and not Tools.currentTarget.handle.isPlayerCompanionCached then
+
+          if Tools:ShouldCrouchButtonAppear(Tools.currentTarget) then
+            local buttonLabel = " Change To Crouch Stance "
+            if Tools.isCrouching then
+              buttonLabel = " Change To Stand Stance "
+            end
+
+            if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
+              Tools.isCrouching = not Tools.isCrouching
+
+              local handle = Tools.currentTarget.handle
+
+              if Tools.isCrouching then
+                local pos = handle:GetWorldPosition()
+                pos = Vector4.new(pos.x, pos.y, pos.z, pos.w)
+                Util:MoveTo(handle, pos, nil, true)
+              else
+                Tools.currentTarget.parameters = AMM:GetAppearance(Tools.currentTarget)
+
+                local currentTarget = Tools.currentTarget
+                if currentTarget.type ~= 'Spawn' then
+                  for _, spawn in pairs(AMM.Spawn.spawnedNPCs) do
+                    if currentTarget.id == spawn.id or Util:CheckVByID(currentTarget.id) then currentTarget = spawn break end
+                  end
+                end
+
+                Tools.currentTarget = ''
+                AMM.Spawn:DespawnNPC(currentTarget)
+
+                Cron.After(0.5, function()
+                  AMM.Spawn:SpawnNPC(currentTarget)
+                end)
+              end
+            end
+          end
+        end
+      end
+
+      AMM.UI:Spacing(8)
+
+      local targetIsPlayer = Tools.currentTarget.type == "Player"
+      if not AMM.playerInPhoto or (AMM.playerInPhoto and targetIsPlayer and Tools.animatedHead) then
+        AMM.UI:TextCenter("Facial Expression", true)
+        ImGui.Spacing()
+
+        local isSelecting = false
+
+        if ImGui.BeginCombo("Expressions", Tools.selectedFace.name) then
+          for i, face in ipairs(Tools.expressions) do
+            if ImGui.Selectable(face.name, (face.name == Tools.selectedFace.name)) then
+              Tools.selectedFace = face
+              Tools.activatedFace = false
+              isSelecting = true
+            end
+          end
+          ImGui.EndCombo()
+        end
+
+        if not isSelecting and Tools.selectedFace.name ~= "Select Expression" and not Tools.activatedFace then
+          if Tools.lookAtTarget then
+            local ent = Game.FindEntityByID(Tools.lookAtTarget.handle:GetEntityID())
+            if not ent then Tools.lookAtTarget = nil end
+          end
+          Tools:ActivateFacialExpression(Tools.currentTarget, Tools.selectedFace)
+        end
+
+        ImGui.Spacing()
+
+        if not AMM.playerInPhoto and Tools.currentTarget ~= '' then
+
+          AMM.UI:Spacing(4)
+
+          local npcHash = tostring(Tools.currentTarget.handle:GetEntityID().hash)
+
+          AMM.UI:TextCenter("Look At", true)
+          for _, option in ipairs(Tools.lookAtOptions) do
+            if ImGui.RadioButton(option.name, Tools.selectedLookAt.name == option.name) then
+              Tools.selectedLookAt = option
+              if Tools.lookAtActiveNPCs[npcHash] then Tools:ActivateLookAt() end
+            end
+
+            ImGui.SameLine()
+          end
+
+          ImGui.Dummy(20, 20)
+
+          ImGui.SameLine()
+
+          local reset = false
+          if ImGui.SmallButton("Reset") then
+            Tools:ResetLookAt()
+            reset = true
+          end
+
+          ImGui.Spacing()
+
+          if Tools.selectedLookAt.name ~= "Eyes Only" then
+            Tools.headStiffness, used = ImGui.SliderFloat("Head Stiffness", Tools.headStiffness, 0.0, 1.0, "%.1f")
+            if Tools.lookAtActiveNPCs[npcHash] and (used or reset) then Tools:ActivateLookAt() end
+
+            Tools.headPoseOverride, used = ImGui.SliderFloat("Head Pose Override", Tools.headPoseOverride, 0.0, 1.0, "%.1f")
+            if Tools.lookAtActiveNPCs[npcHash] and (used or reset) then Tools:ActivateLookAt() end
+          end
+
+          if Tools.selectedLookAt.name == "All" then
+            Tools.chestStiffness, used = ImGui.SliderFloat("Chest Stiffness", Tools.chestStiffness, 0.0, 2.0, "%.1f")
+            if Tools.lookAtActiveNPCs[npcHash] and (used or reset) then Tools:ActivateLookAt() end
+
+            Tools.chestPoseOverride, used = ImGui.SliderFloat("Chest Pose Override", Tools.chestPoseOverride, 0.0, 2.0, "%.1f")
+            if Tools.lookAtActiveNPCs[npcHash] and (used or reset) then Tools:ActivateLookAt() end
+          end
+
+          AMM.UI:Spacing(4)
+
+          ImGui.Text("Current Target:")
+
+          ImGui.SameLine()
+          local lookAtTargetName = "V"
+          if Tools.lookAtTarget ~= nil then
+            lookAtTargetName = Tools.lookAtTarget.name
+          end
+
+          AMM.UI:TextColored(lookAtTargetName)
+
+          AMM.UI:Spacing(3)
+
+          local availableTargets = {}
+
+          table.insert(availableTargets, {name = "V", handle = Game.GetPlayer()})
+
+          for _, spawned in pairs(AMM.Spawn.spawnedNPCs) do
+            if Tools.currentTarget.hash ~= spawned.hash then
+              table.insert(availableTargets, spawned)
+            -- elseif Tools.currentTarget.hash == spawned.hash then
+            --   Tools:SetCurrentTarget(spawned)
+            end
+          end
+
+          if Tools.currentTarget ~= '' then
+            table.insert(availableTargets, Tools.currentTarget)
+          end
+
+          if ImGui.BeginCombo("Look At Target", lookAtTargetName) then
+            for i, t in ipairs(availableTargets) do
+              if ImGui.Selectable(t.name.."##"..i, (t.name == lookAtTargetName)) then
+                lookAtTargetName = t.name
+                Tools.lookAtTarget = t
+              end
+            end
+            ImGui.EndCombo()
+          end
+
+          local buttonLabel = "Activate Look At"
+          if Tools.lookAtActiveNPCs[npcHash] then
+            buttonLabel = "Deactivate Look At"
+          end
+
+          if ImGui.Button(buttonLabel, Tools.style.buttonWidth, Tools.style.buttonHeight) then
+
+            if Tools.lookAtActiveNPCs[npcHash] == nil then
+              Tools:ActivateLookAt()
+            else
+              Tools.lookAtActiveNPCs[npcHash] = nil
+              local stimComp = Tools.currentTarget.handle:GetStimReactionComponent()
+              stimComp:DeactiveLookAt()
+            end
+          end
+
+          if ImGui.Button("Reset Target", Tools.style.buttonWidth, Tools.style.buttonHeight) then
+            if target ~= nil then
+              Tools.lookAtTarget = nil
+            end
+          end
+        end
+      end
+
+      if AMM.userSettings.experimental and Tools.currentTarget ~= '' and Tools.currentTarget.handle:IsNPC() then
+
+        local es = Game.GetScriptableSystemsContainer():Get(CName.new("EquipmentSystem"))
+        local weapon = es:GetActiveWeaponObject(AMM.player, 39)
+        local npcHasWeapon = Tools.currentTarget.handle:HasPrimaryOrSecondaryEquipment()
+
+        if npcHasWeapon or weapon then
+          AMM.UI:Spacing(8)
+          AMM.UI:TextCenter("Equipment", true)
+          ImGui.Spacing()
+        end
+
+        if npcHasWeapon then
+          if ImGui.Button("Toggle Primary Weapon", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+            local npcHash = tostring(Tools.currentTarget.handle:GetEntityID().hash)
+            if Tools.equippedWeaponNPCs[npcHash] == nil then
+              Tools.equippedWeaponNPCs[npcHash] = {primary = true, secondary = false}
+            else
+              Tools.equippedWeaponNPCs[npcHash].primary = not Tools.equippedWeaponNPCs[npcHash].primary
+            end
+
+            Util:EquipPrimaryWeaponCommand(Tools.currentTarget.handle, Tools.equippedWeaponNPCs[npcHash].primary)
+          end
+
+          ImGui.SameLine()
+          if ImGui.Button("Toggle Secondary Weapon", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+            local npcHash = tostring(Tools.currentTarget.handle:GetEntityID().hash)
+            if Tools.equippedWeaponNPCs[npcHash] == nil then
+              Tools.equippedWeaponNPCs[npcHash] = {primary = false, secondary = true}
+            else
+              Tools.equippedWeaponNPCs[npcHash].secondary = not Tools.equippedWeaponNPCs[npcHash].secondary
+            end
+
+            Util:EquipSecondaryWeaponCommand(Tools.currentTarget.handle, Tools.equippedWeaponNPCs[npcHash].secondary)
+          end
+        end
+
+        if weapon then
+          if ImGui.Button("Give Current Equipped Weapon", Tools.style.buttonWidth, Tools.style.buttonHeight) then
+            local weaponTDBID = weapon:GetItemID().tdbid
+            Util:EquipGivenWeapon(Tools.currentTarget.handle, weaponTDBID, Tools.forceWeapon)
+          end
+
+          if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("Note: Out of combat, the NPC will unequip the given weapon immediately.")
+          end
+
+          ImGui.Spacing()
+          Tools.forceWeapon = ImGui.Checkbox("Force Given Weapon", Tools.forceWeapon)
+
+          if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("This will stop the NPC from unequipping your given weapon. Note: the NPC will still unequip at will during combat.")
+          end
+        end
+      end
+    elseif Tools.currentTarget and Tools.currentTarget ~= '' then
+
+      if Tools.currentTargetComponents == nil then
+        Tools.currentTargetComponents = AMM.Props:CheckForValidComponents(Tools.currentTarget.handle)
+      end
+
+      local components = Tools.currentTargetComponents
+
+      AMM.UI:Spacing(8)
+
+      AMM.UI:TextCenter("Scale", true)
+
+      if components then
+
+        local scaleChanged = false
+        if Tools.scaleWidth == nil or Tools.scaleWidth < 50 then
+          Tools.scaleWidth = ImGui.GetWindowContentRegionWidth()
+        end
+
+        if Tools.proportionalMode then
+          ImGui.PushItemWidth(Tools.scaleWidth)
+          Tools.currentTarget.scale.x, scaleChanged = ImGui.DragFloat("##scale", Tools.currentTarget.scale.x, 0.1)
+          ImGui.PopItemWidth()
+
+          if scaleChanged then
+            Tools.currentTarget.scale.y = Tools.currentTarget.scale.x
+            Tools.currentTarget.scale.z = Tools.currentTarget.scale.x
+          end
+        else
+          ImGui.PushItemWidth((Tools.scaleWidth / 3) - 8)
+          Tools.currentTarget.scale.x, used = ImGui.DragFloat("##scaleX", Tools.currentTarget.scale.x, 0.1)
+          if used then scaleChanged = true end
+          ImGui.SameLine()
+          Tools.currentTarget.scale.y, used = ImGui.DragFloat("##scaleY", Tools.currentTarget.scale.y, 0.1)
+          if used then scaleChanged = true end
+          ImGui.SameLine()
+          Tools.currentTarget.scale.z, used = ImGui.DragFloat("##scaleZ", Tools.currentTarget.scale.z, 0.1)
+          if used then scaleChanged = true end
+          ImGui.PopItemWidth()
+        end
+
+        if scaleChanged then
+          Tools:SetScale(components, Tools.currentTarget.scale, Tools.proportionalMode)
+        end
+
+        Tools.proportionalMode, proportionalModeChanged = ImGui.Checkbox("Proportional Mode", Tools.proportionalMode)
+
+        if proportionalModeChanged then
+          Tools:SetScale(components, Tools.currentTarget.scale, Tools.proportionalMode)
+        end
+
+        if ImGui.Button("Reset Scale", Tools.style.buttonWidth, Tools.style.buttonHeight) then
+          Tools:SetScale(components, Tools.currentTarget.defaultScale, true)
+          Tools.currentTarget.scale = {
+            x = Tools.currentTarget.defaultScale.x,
+            y = Tools.currentTarget.defaultScale.y,
+            z = Tools.currentTarget.defaultScale.z,
+          }
+        end
+      else
+        AMM.UI:Spacing(3)
+        AMM.UI:TextCenter("Scaling Not Available")
+      end
+
+      AMM.UI:Spacing(8)
+
+      local lookAtTargetName = "V"
+      if Tools.lookAtTarget ~= nil then
+        lookAtTargetName = Tools.lookAtTarget.name
+      end
+
+      ImGui.Text("Current Look At Target:")
+      ImGui.SameLine()
+      AMM.UI:TextColored(lookAtTargetName)
+
+      if ImGui.Button("Change Look At Target", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+        if Tools.currentTarget ~= '' then
+          Tools.lookAtTarget = Tools.currentTarget
+        end
+      end
+
+      ImGui.SameLine()
+      if ImGui.Button("Reset Look At Target", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+        if target ~= nil then
+          Tools.lookAtTarget = nil
+        end
+      end
+    end
+
+    if Tools.currentTarget and Tools.currentTarget ~= '' then
+      if AMM.Light:GetLightComponent(Tools.currentTarget.handle) then
+        AMM.UI:Spacing(8)
+
+        AMM.UI:TextCenter("Light Control", true)
+
+        if ImGui.Button("Toggle Light", Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+          if AMM.Props.hiddenProps[Tools.currentTarget.hash] then
+            AMM.Props.hiddenProps[Tools.currentTarget.hash] = nil
+          end
+          AMM.Light:ToggleLight(AMM.Light:GetLightData(Tools.currentTarget))
+        end
+
+        ImGui.SameLine()
+        local buttonLabel ="Open Light Settings"
+        if AMM.Light.isEditing then
+          buttonLabel = "Update Light Target"
+        end
+
+        if ImGui.Button(buttonLabel, Tools.style.halfButtonWidth, Tools.style.buttonHeight) then
+          AMM.Light:Setup(Tools.currentTarget)
+          AMM.Light.isEditing = true
+        end
+      end
+    end
+  end
+
+  if AMM.userSettings.floatingTargetTools then
+    ImGui.End()
+  end
+
+  if not(Tools.movementWindow.open) and Tools.movementWindow.isEditing then
+    Tools.movementWindow.isEditing = false
+  end
+end
+
 -- Time actions
 function Tools:DrawTimeActions()
   -- AMM.UI:TextColored("Time Actions:")
@@ -1511,9 +1904,37 @@ function Tools:DrawTimeActions()
   local gameTime = Tools:GetCurrentHour()
   Tools.timeValue = Tools:ConvertTime(gameTime)
 
-  ImGui.PushItemWidth(ImGui.GetWindowContentRegionWidth() - ImGui.CalcTextSize("Time of Day "))
+  ImGui.PushItemWidth((ImGui.GetWindowContentRegionWidth() - ImGui.CalcTextSize("Time of Day ")) - 82)
 
-  Tools.timeValue, changeTimeUsed = ImGui.SliderInt("Time of Day", Tools.timeValue, 0, 1440, "")
+  Tools.timeValue, changeTimeUsed = ImGui.SliderInt("##", Tools.timeValue, 0, 1440, "")
+
+  ImGui.PopItemWidth()
+
+  ImGui.SameLine()
+
+  if ImGui.Button("-", 25, 40) then
+    if Tools.timeValue < 0 then
+      Tools.timeValue = 1440
+    end
+
+    Tools.timeValue = Tools.timeValue - 1
+    changeTimeUsed = true
+  end
+
+  ImGui.SameLine()
+
+  if ImGui.Button("+", 25, 40) then
+    if Tools.timeValue > 1440 then
+      Tools.timeValue = 0
+    end
+
+    Tools.timeValue = Tools.timeValue + 2
+    changeTimeUsed = true
+  end
+
+  ImGui.SameLine()
+
+  ImGui.Text("Time of Day")
 
   if changeTimeUsed then
     if Tools.relicEffect then
@@ -1525,6 +1946,8 @@ function Tools:DrawTimeActions()
 
     Tools:SetTime(Tools.timeValue)
   end
+
+  ImGui.PushItemWidth(ImGui.GetWindowContentRegionWidth() - ImGui.CalcTextSize("Time of Day "))
 
   ImGui.SameLine(250)
   ImGui.Text(f("%02d:%02d", gameTime.hour, gameTime.minute))
@@ -1557,7 +1980,7 @@ function Tools:DrawTimeActions()
       Tools:SetRelicEffect(false)
 
       local currentTime = Tools.timeValue
-      Cron.Every(0.1, function(timer)
+      Cron.Every(5, function(timer)
         Tools:SetTime(currentTime)
         if not Tools.pauseTime then
           Cron.After(60.0, function()
@@ -1596,7 +2019,7 @@ end
 function Tools:SkipFrame()
   Tools:FreezeTime()
 
-  Cron.After(0.1, function() 
+  Cron.After(0.1, function()
     Tools:FreezeTime()
   end)
 end
@@ -1638,6 +2061,10 @@ function Tools:SetTime(time)
 end
 
 function Tools:SetRelicEffect(state)
+  if Tools.relicOriginalFlats == nil then
+    Tools.relicOriginalFlats = Tools:GetRelicFlats()
+  end
+
   Tools.relicEffect = state
   for flat, og in pairs(Tools.relicOriginalFlats) do
     TweakDB:SetFlat(flat, state and og or CName.new("0"))
@@ -1655,6 +2082,163 @@ function Tools:GetRelicFlats()
   return flats
 end
 
+-- Photo Mode Enhancements
+function Tools:DrawPhotoModeEnhancements()
+
+  if AMM.CETVersion >= 18 and AMM.userSettings.photoModeEnhancements then
+    Tools.defaultAperture = ImGui.SliderFloat("Default Aperture", Tools.defaultAperture, 1.2, 16, "%.1f")
+    if ImGui.IsItemHovered() then
+      ImGui.SetTooltip("Requires game restart to take effect")
+    end
+
+    Tools.defaultFOV = ImGui.SliderInt("Default Field of View", Tools.defaultFOV, 15, 90)
+    if ImGui.IsItemHovered() then
+      ImGui.SetTooltip("Requires game restart to take effect")
+    end
+
+    AMM.UI:Spacing(4)
+  end
+
+  AMM.UI:TextColored("Look At Camera:")
+  for _, option in ipairs(Tools.lookAtOptions) do
+    if ImGui.RadioButton(option.name, Tools.selectedLookAt.name == option.name) then
+      Tools.selectedLookAt = option
+      TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera.lookAtParts', Tools.selectedLookAt.parts)
+    end
+
+    if ImGui.IsItemHovered() then
+      ImGui.SetTooltip("Turn Look At Camera option OFF once after changing this setting")
+    end
+
+    ImGui.SameLine()
+  end
+
+  ImGui.Dummy(20, 20)
+
+  ImGui.SameLine()
+
+  local reset = false
+  if ImGui.SmallButton("Reset") then
+    TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera.lookAtParts', Tools.selectedLookAt.parts)
+    Tools:ResetLookAt()
+    reset = true
+  end
+
+  ImGui.Spacing()
+
+  Tools.lookAtSpeed, used = ImGui.SliderFloat("Movement Speed", Tools.lookAtSpeed, 0.0, 140.0, "%.1f")
+  if used or reset then
+    TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera.outTransitionSpeed', Tools.lookAtSpeed)
+    TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera.transitionSpeed', Tools.lookAtSpeed)
+  end
+
+  if Tools.selectedLookAt.name ~= "Eyes Only" then
+    Tools.headStiffness, used = ImGui.SliderFloat("Head Stiffness", Tools.headStiffness, 0.0, 1.0, "%.1f")
+    if used or reset then TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera_inline0.weight', Tools.headStiffness) end
+
+    Tools.headPoseOverride, used = ImGui.SliderFloat("Head Pose Override", Tools.headPoseOverride, 0.0, 1.0, "%.1f")
+    if used or reset then TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera_inline0.suppress', Tools.headPoseOverride) end
+  end
+
+  if Tools.selectedLookAt.name == "All" then
+    Tools.chestStiffness, used = ImGui.SliderFloat("Chest Stiffness", Tools.chestStiffness, 0.0, 1.0, "%.1f")
+    if used or reset then TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera_inline1.weight', Tools.chestStiffness) end
+
+    Tools.chestPoseOverride, used = ImGui.SliderFloat("Chest Pose Override", Tools.chestPoseOverride, 0.0, 1.0, "%.1f")
+    if used or reset then TweakDB:SetFlat('LookatPreset.PhotoMode_LookAtCamera_inline1.suppress', Tools.chestPoseOverride) end
+  end
+
+  ImGui.Spacing()
+
+  AMM.UI:TextWrappedWithColor("Disable 'Look At Camera' in Photo Mode once to take effect", "ButtonActive")
+
+  AMM.UI:Spacing(3)
+
+  Tools.cursorDisabled, clicked = ImGui.Checkbox("Disable Photo Mode Cursor", Tools.cursorDisabled)
+  if clicked then
+    Tools:ToggleCursor()
+  end
+
+  if Tools.cursorDisabled then
+    ImGui.SameLine()
+    Tools.cursorStateLock = ImGui.Checkbox("Lock State", Tools.cursorStateLock)
+  end
+end
+
+-- Utilities
+function Tools:CheckIfDirectModeShouldBeDisabled(hash)
+  if hash == Tools.currentTarget.hash then
+    Tools:ToggleDirectMode(true)
+  end
+end
+
+function Tools:ToggleDirectMode(systemActivated)
+  if systemActivated then
+    Tools.directMode = not Tools.directMode
+  end
+
+  Tools.lockTarget = true
+  Tools.currentTarget:StartListeners()
+
+  if Tools.directMode then
+    Util:AddPlayerEffects()
+  elseif not Tools.directMode then
+    Util:RemovePlayerEffects()
+  end
+end
+
+function Tools:ToggleCursor(systemActivated)
+  if systemActivated then
+    Tools.cursorDisabled = not Tools.cursorDisabled
+  end
+
+  if Tools.cursorController then
+    local context = "Show"
+    if Tools.cursorDisabled then context = "Hide" end
+    Tools.cursorController:ProcessCursorContext(CName.new(context), nil)
+  end
+end
+
+function Tools:ToggleLookAtMarker(active)
+  if Tools.lockTargetPinID ~= nil then
+    Game.GetMappinSystem():SetMappinActive(Tools.lockTargetPinID, active)
+  end
+end
+
+function Tools:ResetLookAt()
+  Tools.selectedLookAt = Tools.lookAtOptions[1]
+  Tools.headStiffness = 0.0
+  Tools.headPoseOverride = 1.0
+  Tools.chestStiffness = 0.1
+  Tools.chestPoseOverride = 0.5
+  Tools.lookAtSpeed = 140.0
+end
+
+function Tools:ActivateLookAt()
+  local headSettings = nil
+  local chestSettings = nil
+
+  if Tools.selectedLookAt.name ~= "Eyes Only" then
+    headSettings = {weight = Tools.headStiffness, suppress = Tools.headPoseOverride}
+  end
+
+  if Tools.selectedLookAt.name == "All" then
+    chestSettings = {weight = Tools.chestStiffness, suppress = Tools.chestPoseOverride}
+  end
+
+  local npcHash = tostring(Tools.currentTarget.handle:GetEntityID().hash)
+
+  if Tools.lookAtActiveNPCs[npcHash] == nil then
+    Tools.lookAtActiveNPCs[npcHash] = {
+      mode = Tools.selectedLookAt,
+      headSettings = headSettings,
+      chestSettings = chestSettings
+    }
+  end
+
+  Util:NPCLookAt(Tools.currentTarget.handle, Tools.lookAtTarget, headSettings, chestSettings)
+end
+
 function Tools:ShouldCrouchButtonAppear(spawn)
   if spawn.type == 'Spawn' then return true end
 
@@ -1666,27 +2250,53 @@ function Tools:ShouldCrouchButtonAppear(spawn)
 end
 
 function Tools:EnterPhotoMode()
-  AMM.playerInPhoto = true
-  Game.SetTimeDilation(0)
 
-  Tools.lookAtV = false
+  if AMM.Director.activeCamera then
+    AMM.Director.activeCamera:Deactivate(0)
+    AMM.Director.activeCamera = nil
+  end
+
+  Cron.Every(0.1, { tick = 1 }, function(timer)
+
+    if AMM.playerInVehicle or Util:GetMountedVehicleTarget() then
+      AMM.playerInVehicle = true
+      Tools.photoModePuppet = Game.GetPlayer()
+    end
+
+    if Tools.photoModePuppet then
+      AMM.playerInPhoto = true
+      Game.SetTimeDilation(0)
+      
+      if Tools.cursorStateLock then
+        Tools:ToggleCursor(true)
+      end
+
+      Cron.Halt(timer)
+    end
+
+    timer.tick = timer.tick + 1
+
+    if timer.tick > 10 then
+      Cron.Halt(timer)
+    end
+  end)
 
   if Tools.savePhotoModeToggles then
     Cron.After(1.0, function()
-      if not Tools.makeupToggle then 
+      if not Tools.makeupToggle then
         Tools.makeupToggle = true
         Tools:ToggleMakeup()
-      end						
+      end
       if not Tools.accessoryToggle then
         Tools.accessoryToggle = true
-        Tools:ToggleAccessories() 
+        Tools:ToggleAccessories()
       end
-      if not Tools.seamfixToggle then 
+      if not Tools.seamfixToggle then
         Tools.seamfixToggle = true
-        Tools:ToggleSeamfix() 
+        Tools:ToggleSeamfix()
       end
     end)
-    end
+  end
 
   if Tools.invisibleBody then
     Cron.After(1.0, function()
@@ -1698,17 +2308,26 @@ end
 
 function Tools:ExitPhotoMode()
   AMM.playerInPhoto = false
+  Tools.photoModePuppet = nil
+  Tools.cursorDisabled = false
+
+  -- Trigger User Data save in case the user changed FOV and Aperture defaults
+  AMM:UpdateSettings()
 
   if Tools.lookAtLocked then
     Tools:ToggleLookAt()
   end
 
-  Tools.lookAtV = true
-
   if not Tools.savePhotoModeToggles then
   Tools.makeupToggle = true
   Tools.accessoryToggle = true
   Tools.seamfixToggle = true
+  end
+
+  if next(AMM.Props.hiddenProps) ~= nil then
+    for _, prop in pairs(AMM.Props.hiddenProps) do  
+      AMM.Props:ToggleHideProp(prop.ent)
+    end
   end
 
   local c = Tools.slowMotionSpeed

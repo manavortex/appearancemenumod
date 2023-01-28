@@ -1,10 +1,15 @@
 local Swap = {
+  entities = {},
   activeSwaps = {},
   searchQuery = '',
   searchBarWidth = 500,
   savedSwaps = {},
   specialSwap = false,
 }
+
+function Swap:Initialize()
+  self:LoadSavedSwaps(self.savedSwaps)
+end
 
 function Swap:RevertModelSwap(swapID)
   Game.GetPlayer():SetWarningMessage("Reload your save game to update changes!")
@@ -29,7 +34,6 @@ end
 function Swap:LoadSavedSwaps(userData)
   for id, swap in pairs(userData) do
     self:ChangeEntityTemplateTo(swap[1], id, swap[2])
-    self.savedSwaps[id] = {swap[1], swap[2]}
   end
 end
 
@@ -95,7 +99,7 @@ function Swap:Draw(AMM, target)
       end
     end
 
-    if target ~= nil and (target.type == 'Player' or target.type == 'NPCPuppet' or target.type == 'vehicle' or target.handle:IsReplacer()) then
+    if target ~= nil and (target.type == 'Player' or target.handle:IsNPC() or target.handle:IsVehicle() or target.handle:IsReplacer()) then
       AMM.UI:TextColored("Current Target:")
       ImGui.Text(target.name)
 
@@ -124,7 +128,7 @@ function Swap:Draw(AMM, target)
         local entities = {}
         local query = "SELECT * FROM entities WHERE is_swappable = 1 AND entity_name LIKE '%"..Swap.searchQuery.."%' ORDER BY entity_name ASC"
         for en in db:nrows(query) do
-          table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
+          table.insert(entities, en)
         end
 
         if #entities ~= 0 then
@@ -136,32 +140,39 @@ function Swap:Draw(AMM, target)
         if ImGui.BeginChild("Categories", ImGui.GetWindowContentRegionWidth(), ImGui.GetWindowHeight() / 1.5) then
           for _, category in ipairs(AMM.Spawn.categories) do
             local entities = {}
-            if category.cat_name == 'Favorites' then
-              local query = "SELECT * FROM favorites_swap"
-              for fav in db:nrows(query) do
-                query = f("SELECT * FROM entities WHERE entity_id = '%s'", fav.entity_id)
+
+            if Swap.entities[category] == nil or category.cat_name == 'Favorites' then
+              if category.cat_name == 'Favorites' then
+                local query = "SELECT * FROM favorites_swap"
+                for fav in db:nrows(query) do
+                  query = f("SELECT * FROM entities WHERE entity_id = '%s'", fav.entity_id)
+                  for en in db:nrows(query) do
+                    table.insert(entities, en)
+                  end
+                end
+                if #entities == 0 then
+                  if ImGui.CollapsingHeader(category.cat_name) then
+                    ImGui.Text("It's empty :(")
+                  end
+                end
+              else
+                local query = f("SELECT * FROM entities WHERE is_swappable = 1 AND cat_id == '%s' AND cat_id != 22 ORDER BY entity_name ASC", category.cat_id)
                 for en in db:nrows(query) do
-                  table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
+                  table.insert(entities, en)
                 end
               end
+
+              Swap.entities[category] = entities
             end
 
-            local query = f("SELECT * FROM entities WHERE is_swappable = 1 AND cat_id == '%s' AND cat_id != 22 ORDER BY entity_name ASC", category.cat_id)
-            for en in db:nrows(query) do
-              table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
-            end
-
-            if #entities ~= 0 or category.cat_name == 'Favorites' then
+            if Swap.entities[category] ~= nil and #Swap.entities[category] ~= 0 then
               if(ImGui.CollapsingHeader(category.cat_name)) then
-                if #entities == 0 then
-                  ImGui.Text("It's empty :(")
-                else
-                  Swap:DrawEntitiesButtons(entities, category.cat_name)
-                end
+                  Swap:DrawEntitiesButtons(Swap.entities[category], category.cat_name)
               end
             end
           end
         end
+
         ImGui.EndChild()
       end
     else
@@ -261,10 +272,10 @@ function Swap:DrawEntitiesButtons(entities, categoryName)
 
   local targetID = AMM:GetScanID(target.handle)
 
-  for i, entity in ipairs(entities) do
-		name = entity[1].."##"..tostring(i)
-		id = entity[2]
-		path = entity[3]
+  for i, en in ipairs(entities) do
+		name = en.entity_name.."##"..tostring(i)
+		id = en.entity_id
+		path = en.entity_path
 
     local favOffset = 0
 		if categoryName == 'Favorites' then
@@ -361,6 +372,11 @@ end
 
 function Swap:GetEntityPathFromID(id)
   local entityPath = nil
+
+  if Util:CheckVByID(id) then
+    return "Character.TPP_Player_Cutscene"..Util:GetPlayerGender()
+  end
+
   for path in db:urows(f("SELECT entity_path FROM entities WHERE entity_id = '%s'", id)) do
     entityPath = path
   end

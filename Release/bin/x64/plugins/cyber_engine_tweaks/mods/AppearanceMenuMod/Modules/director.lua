@@ -7,14 +7,13 @@ local Director = {
   activeTab = '',
   scripts = {},
   triggers = '',
-  triggersEnabled = true,
   selectedTrigger = {title = "Select Trigger"},
   selectedActor = '',
   selectedNode = '',
   lastSelectedNode = {name = ''},
   lastSelectedTrigger = {title = ''},
   lastSelectedActor = {name = ''},
-  newNode = '',
+  newNode = '',  
   activeTriggers = {},
   activeScripts = {},
   activeActors = {},
@@ -28,6 +27,10 @@ local Director = {
   teleportCommand = '',
   expressions = AMM:GetPersonalityOptions(),
   voData = AMM:GetPossibleVOs(),
+
+  -- Camera Properites
+  cameras = {},
+  activeCamera = nil,
 
   -- Cron Callback Properties
   finishedSpawning = false,
@@ -110,6 +113,32 @@ function Director:NewNode(name)
   return obj
 end
 
+function Director:AdjustActiveCameraFOV(value)
+  if Director.activeCamera then
+    local newFOV = Director.activeCamera.fov + value
+    Director.activeCamera:SetFOV(newFOV)
+  end
+end
+
+function Director:AdjustActiveCameraZoom(value)
+  if Director.activeCamera then
+    local newZoom = Director.activeCamera.zoom + value
+    Director.activeCamera:SetZoom(newZoom)
+  end
+end
+
+function Director:DespawnActiveCamera()
+  if Director.activeCamera then
+    Director.activeCamera:Despawn()
+  end
+end
+
+function Director:ToggleActiveCamera()
+  if Director.activeCamera then
+    Director.activeCamera:Toggle()
+  end
+end
+
 function Director:StopAll()
   if Director.selectedScript.isRunning then
     Director:StopScript(Director.selectedScript)
@@ -163,7 +192,7 @@ function Director:SenseNPCTalk()
 end
 
 function Director:SenseTriggers()
-  if Director.triggersEnabled and Director.triggers ~= '' then
+  if AMM.userSettings.directorTriggers and Director.triggers ~= '' then
     local playerPos = Game.GetPlayer():GetWorldPosition()
     local dist
     for _, trigger in ipairs(Director.triggers) do
@@ -193,39 +222,45 @@ function Director:Draw(AMM)
 
   if (ImGui.BeginTabItem("Director")) then
 
-    AMM.UI:Spacing(3)
-
     AMM.UI:TextColored("Director Mode")
     local description = "Create Scripts to add, dress and direct Actors to perform for machinima, screenshots and roleplay."
 
     if Director.activeTab == "Triggers" then
       description = "Create Triggers to activate pre-made Scripts on contact."
+    elseif Director.activeTab == "Cameras" then
+      description = "Create Cameras to move around freely, set different field of views and zoom levels."
     end
 
     ImGui.TextWrapped(description)
 
-    AMM.UI:Spacing(6)
+    AMM.UI:Spacing(2)
 
     if Director.sizeX == 0 then
       Director.sizeX = ImGui.GetWindowContentRegionWidth()
     end
 
     local offSet = Director.sizeX - ImGui.CalcTextSize("Triggers On/Off")
-    ImGui.Dummy(offSet - 50, 10)
+    ImGui.Dummy(offSet - 70, 10)
     ImGui.SameLine()
     AMM.UI:TextColored("Triggers On/Off")
     ImGui.SameLine()
-    Director.triggersEnabled = ImGui.Checkbox(" ", Director.triggersEnabled)
+    AMM.userSettings.directorTriggers = ImGui.Checkbox(" ", AMM.userSettings.directorTriggers)
 
-    if AMM.playerInMenu then
+    if AMM.playerInPhoto then
+      if ImGui.BeginTabBar("Director Tabs") then
+        Director:DrawCamerasTab()
+
+        ImGui.EndTabBar()
+      end
+    elseif AMM.playerInMenu then
       AMM.UI:TextColored("Player In Menu")
       ImGui.Text("Director only works in game")
     else
-
       if ImGui.BeginTabBar("Director Tabs") then
 
         Director:DrawScriptTab()
         Director:DrawTriggerTab()
+        Director:DrawCamerasTab()
 
         local running = false
         for _, script in ipairs(Director.scripts) do
@@ -283,13 +318,114 @@ function Director:DrawRunningTab()
   end
 end
 
+function Director:DrawCamerasTab()
+  if ImGui.BeginTabItem("Cameras") then
+    Director.activeTab = "Cameras"
+
+    AMM.UI:Spacing(6)
+
+    if ImGui.Button("New Camera", -1, 40) then
+      local camera = AMM.Camera:new()
+      camera:Spawn()
+      camera:StartListeners()
+
+      table.insert(Director.cameras, camera)
+      Director.activeCamera = camera
+      
+      Cron.Every(0.1, function(timer)
+				if AMM.Director.activeCamera.handle then
+					AMM.Director.activeCamera:Activate(1)
+					Cron.Halt(timer)
+				end
+			end)
+    end
+
+    AMM.UI:Separator()
+
+    if #Director.cameras > 0 then
+      for i, camera in ipairs(Director.cameras) do
+        if ImGui.CollapsingHeader("Camera "..i.."##"..i) then
+
+          local buttonLabel = "Activate"      
+          if Director.activeCamera and Director.activeCamera.hash == camera.hash then
+            buttonLabel = "Deactivate"
+          end
+
+          local buttonWidth = AMM.UI.style.halfButtonWidth - 10
+
+          if ImGui.Button(buttonLabel.."##"..i, buttonWidth, 30) then
+            if buttonLabel == "Activate" then
+              Director.activeCamera = camera
+              camera:Activate(1)
+            else
+              Director.activeCamera = nil
+              camera:Deactivate(1)
+            end
+          end
+
+          ImGui.SameLine()
+
+          camera.fov, fovUsed = ImGui.DragInt("FOV##"..i, camera.fov, 1, 1, 175)
+
+          if fovUsed then
+            camera:SetFOV(camera.fov)
+          end
+
+          if ImGui.Button("Toggle Marker".."##"..i, buttonWidth, 30) then
+            if camera.mappinID then
+              Game.GetMappinSystem():UnregisterMappin(camera.mappinID)
+              camera.mappinID = nil
+            else
+              camera.mappinID = Util:SetMarkerOverObject(camera.handle, gamedataMappinVariant.CustomPositionVariant, 0)
+            end
+          end
+
+          ImGui.SameLine()
+
+          camera.zoom, zoomUsed = ImGui.DragFloat("Zoom##"..i, camera.zoom, 0.1, 1, 175, "%.1f")
+
+          if zoomUsed then
+            camera:SetZoom(camera.zoom)
+          end
+
+          if ImGui.Button("Despawn".."##"..i, buttonWidth, 30) then
+            if Director.activeCamera and Director.activeCamera.hash == camera.hash then
+              Director.activeCamera = nil
+            end
+
+            camera:Despawn()
+            table.remove(Director.cameras, i)
+          end
+
+          ImGui.SameLine()
+
+          local speed = camera.speed * 100
+          speed = ImGui.DragFloat("Speed##"..i, speed, 1, 1, 100, "%.0f")
+          camera.speed = speed / 100
+
+          camera.lock = ImGui.Checkbox("Lock Frame", camera.lock)
+          camera:SetLock(camera.lock)
+        end
+      end
+
+      AMM.UI:Separator()
+
+      AMM.UI:TextColored("WARNING:")
+      ImGui.SameLine()
+      ImGui.Text("Close the menu to be able to move the camera")
+    end
+
+    ImGui.EndTabItem()
+  end
+end
+
 function Director:DrawTriggerTab()
   if ImGui.BeginTabItem("Triggers") then
     Director.activeTab = "Triggers"
 
     AMM.UI:Spacing(6)
 
-    if ImGui.Button("New Trigger", -1, 30) then
+    if ImGui.Button("New Trigger", -1, 40) then
       local newTrigger = Director:NewTrigger("New Trigger")
 
       table.insert(Director.triggers, newTrigger)
@@ -406,7 +542,7 @@ function Director:DrawScriptTab()
 
     AMM.UI:Spacing(6)
 
-    if ImGui.Button("New Script", -1, 30) then
+    if ImGui.Button("New Script", -1, 40) then
       local newScript = Director:NewScript("New Script")
 
       table.insert(Director.scripts, newScript)
@@ -739,47 +875,50 @@ function Director:GetScriptByTitle(title)
 end
 
 function Director:StopScript(script)
-  local pos = Game.GetPlayer():GetWorldPosition()
-  local heading = Game.GetPlayer():GetWorldForward()
-  local behindPlayer = Vector4.new(pos.x - (heading.x * 2), pos.y - (heading.y * 2), pos.z, pos.w)
-  for _, actor in pairs(script.actors) do
-    Director:TeleportActorTo(actor, behindPlayer)
-  end
-
-  Game.GetPreventionSpawnSystem():RequestDespawnPreventionLevel(script.spawnLevel * -1)
-
-  Cron.Halt(script.timer)
-
-  script.done = true
-  Director.stopPressed = true
-
-  if script.trigger then
-    script.trigger.activated = false
-  end
-
-  Cron.Every(0.1, { tick = 1 }, function(timer)
-    local allGone = true
+  if script and not script.done then
+    local pos = Game.GetPlayer():GetWorldPosition()
+    local heading = Game.GetPlayer():GetWorldForward()
+    local behindPlayer = Vector4.new(pos.x - (heading.x * 2), pos.y - (heading.y * 2), pos.z, pos.w)
     for _, actor in pairs(script.actors) do
-      Cron.Halt(actor.timer)
-      local entity = Game.FindEntityByID(actor.entityID)
-      if entity then allGone = false end
+      Director:TeleportActorTo(actor, behindPlayer)
+      actor.handle:Dispose()
     end
 
-    timer.tick = timer.tick + 1
+    Game.GetPreventionSpawnSystem():RequestDespawnPreventionLevel(script.spawnLevel * -1)
 
-    if timer.tick == 50 then
-      Game.GetPlayer():SetWarningMessage("Stopping requires looking away from Actors")
+    Cron.Halt(script.timer)
+
+    script.done = true
+    Director.stopPressed = true
+
+    if script.trigger then
+      script.trigger.activated = false
     end
 
-    if allGone then
-      script = Util:ShallowCopy(script, Director:LoadScriptData(script.title..".json"))
+    Cron.Every(0.1, { tick = 1 }, function(timer)
+      local allGone = true
+      for _, actor in pairs(script.actors) do
+        Cron.Halt(actor.timer)
+        local entity = Game.FindEntityByID(actor.entityID)
+        if entity then allGone = false end
+      end
 
-      Director.stopPressed = false
-      Director.allowTalk = false
+      timer.tick = timer.tick + 1
 
-      Cron.Halt(timer)
-    end
-  end)
+      if timer.tick == 50 then
+        Game.GetPlayer():SetWarningMessage("Stopping requires looking away from Actors")
+      end
+
+      if allGone then
+        script = Util:ShallowCopy(script, Director:LoadScriptData(script.title..".json"))
+
+        Director.stopPressed = false
+        Director.allowTalk = false
+
+        Cron.Halt(timer)
+      end
+    end)
+  end
 end
 
 function Director:RestartScript(script)
@@ -1159,7 +1298,6 @@ function Director:SetHostileTowards(handle, target, group)
 
   local AIC = handle:GetAIControllerComponent()
   local targetAttAgent = handle:GetAttitudeAgent()
-  print(Dump(targetAttAgent, false))
   local reactionComp = handle.reactionComponent
 
   local aiRole = NewObject('handle:AIRole')
@@ -1410,7 +1548,7 @@ function Director:DrawActorsPopup()
       local entities = {}
       local query = "SELECT * FROM entities WHERE is_spawnable = 1 AND entity_name LIKE '%"..Director.searchQuery.."%' ORDER BY entity_name ASC"
       for en in db:nrows(query) do
-        table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
+        table.insert(entities, en)
       end
 
       if #entities ~= 0 then
@@ -1426,14 +1564,14 @@ function Director:DrawActorsPopup()
           for fav in db:nrows(query) do
             query = f("SELECT * FROM entities WHERE entity_id = '%s' AND cat_id != 22", fav.entity_id)
             for en in db:nrows(query) do
-              table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
+              table.insert(entities, en)
             end
           end
         end
 
         local query = f("SELECT * FROM entities WHERE is_spawnable = 1 AND cat_id != 22 AND cat_id == '%s' ORDER BY entity_name ASC", category.cat_id)
         for en in db:nrows(query) do
-          table.insert(entities, {en.entity_name, en.entity_id, en.entity_path})
+          table.insert(entities, en)
         end
 
         if #entities ~= 0 or category.cat_name == 'Favorites' then
@@ -1457,10 +1595,10 @@ function Director:DrawEntitiesButtons(entities, categoryName)
     buttonHeight = ImGui.GetFontSize() * 2
   }
 
-  for i, entity in ipairs(entities) do
-		name = entity[1]
-		id = entity[2]
-		path = entity[3]
+  for i, en in ipairs(entities) do
+		name = en.entity_name
+		id = en.entity_id
+		path = en.entity_path
 
     local favOffset = 0
 		if categoryName == 'Favorites' then

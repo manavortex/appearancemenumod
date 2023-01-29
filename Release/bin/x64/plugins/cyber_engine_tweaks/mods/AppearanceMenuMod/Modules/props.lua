@@ -20,7 +20,7 @@ function Props:NewProp(uid, id, name, template, posString, scale, app, tag)
   obj.pos = Vector4.new(pos.x, pos.y, pos.z, pos.w)
   obj.angles = EulerAngles.new(pos.roll, pos.pitch, pos.yaw)
   obj.scale = loadstring("return "..scale, '')()
-	obj.type = "Prop"
+  obj.type = "Prop"
   obj.isVehicle = false
 
   return obj
@@ -30,8 +30,8 @@ function Props:NewTrigger(triggerString)
   local obj = {}
 
   obj.str = triggerString
-	obj.pos = Util:GetPosFromString(triggerString)
-	obj.type = "Trigger"
+  obj.pos = Util:GetPosFromString(triggerString)
+  obj.type = "Trigger"
 
   return obj
 end
@@ -45,11 +45,11 @@ function Props:NewPreset(name)
   obj.customIncluded = false
 
   while io.open(f("User/Decor/%s.json", obj.name), "r") do
-		local num = obj.name:match("%((%g+)%)")
-		if num then num = tonumber(num) + 1 else num = 1 end
-		obj.name = obj.name:gsub(" %("..tostring(num - 1).."%)", "")
-		obj.name = obj.name.." ("..tostring(num)..")"
-	end
+    local num = obj.name:match("%((%g+)%)")
+    if num then num = tonumber(num) + 1 else num = 1 end
+    obj.name = obj.name:gsub(" %("..tostring(num - 1).."%)", "")
+    obj.name = obj.name.." ("..tostring(num)..")"
+  end
 
   return obj
 end
@@ -111,8 +111,9 @@ function Props:Initialize()
   end
 end
 
-function Props:Update()
-  if Props.activePreset ~= '' then
+function Props:Update()  
+  pcall(function() spdlog.info(f('Props:Update, active preset is %s', Props.activePreset)) end)
+  if Props.activePreset and Props.activePreset ~= '' then
     Props.presets = Props:LoadPresets()
     Props.moddersList = {}
     Props.activePreset.customIncluded = false
@@ -393,7 +394,7 @@ function Props:DrawProps(props)
       if Props.activeProps[prop.uid] and Props.activeProps[prop.uid].handle and Props.activeProps[prop.uid].handle ~= '' then
         local propPos = Props.activeProps[prop.uid].handle:GetWorldPosition()
         local distanceFromPlayer = Util:VectorDistance(playerPos, propPos)
-        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 3 then
+        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 6 then
           Props:DrawSavedProp(prop, i)
         end
       end
@@ -423,7 +424,7 @@ function Props:DrawSavedProp(prop, i)
   ImGui.SameLine()
   if ImGui.SmallButton("Rename##"..i) then
     Props.rename = ''
-	  ImGui.OpenPopup("Rename Prop##"..prop.name)
+    ImGui.OpenPopup("Rename Prop##"..prop.name)
   end
 
   Props:RenamePropPopup(prop)
@@ -867,7 +868,7 @@ function Props:SpawnPropInPosition(ent, pos, angles)
       Props.cachedActivePropsByHash[ent.hash] = ent
 
       if AMM:GetScanClass(ent.handle) == 'entEntity' then
-				ent.type = 'entEntity'
+        ent.type = 'entEntity'
       else
         ent.type = 'Prop'
       end
@@ -1031,10 +1032,10 @@ end
 function Props:SavePropPosition(ent, calledBeforeSaving)
   local pos = ent.handle:GetWorldPosition()
   local angles = GetSingleton('Quaternion'):ToEulerAngles(ent.handle:GetWorldOrientation())
-	if pos == nil then
-		pos = ent.parameters[1]
+  if pos == nil then
+    pos = ent.parameters[1]
     angles = ent.parameters[2]
-	end
+  end
 
   local app = AMM:GetAppearance(ent)
 
@@ -1192,19 +1193,19 @@ end
 function Props:SpawnProp(spawn, pos, angles)
   local app = ''
   local record = ''
-	local offSetSpawn = 0
-	local distanceFromPlayer = 1
+  local offSetSpawn = 0
+  local distanceFromPlayer = 1
   local rotation = 180
-	local playerAngles = GetSingleton('Quaternion'):ToEulerAngles(AMM.player:GetWorldOrientation())
-	local distanceFromGround = tonumber(spawn.parameters) or 0
+  local playerAngles = GetSingleton('Quaternion'):ToEulerAngles(AMM.player:GetWorldOrientation())
+  local distanceFromGround = tonumber(spawn.parameters) or 0
 
   if spawn.parameters and type(spawn.parameters) == 'string' and string.find(spawn.parameters, '{') then
     spawn.parameters = loadstring('return '..spawn.parameters, '')()
   end
 
-	if spawn.parameters and type(spawn.parameters) == 'table' then
+  if spawn.parameters and type(spawn.parameters) == 'table' then
     if spawn.parameters.dist then
-		  distanceFromPlayer = tonumber(spawn.parameters.dist)
+      distanceFromPlayer = tonumber(spawn.parameters.dist)
     end
 
     if spawn.parameters.rot then
@@ -1228,7 +1229,7 @@ function Props:SpawnProp(spawn, pos, angles)
     if spawn.parameters.app then
       app = spawn.parameters.app
     end
-	end
+  end
 
   if AMM.Light:IsAMMLight(spawn) and AMM.userSettings.contactShadows and not string.find(spawn.template, "_shadows.ent") then
     spawn.template = spawn.template:gsub("%.ent", "_shadows.ent")
@@ -1244,21 +1245,21 @@ function Props:SpawnProp(spawn, pos, angles)
     angles = AMM.Tools.savedPosition.angles
   end
 
-	local heading = AMM.player:GetWorldForward()
-	local offsetDir = Vector3.new(heading.x * distanceFromPlayer, heading.y * distanceFromPlayer, heading.z)
-	local spawnTransform = AMM.player:GetWorldTransform()
-	local spawnPosition = GetSingleton('WorldPosition'):ToVector4(spawnTransform.Position)
-	local newPosition = Vector4.new((spawnPosition.x - offSetSpawn) + offsetDir.x, (spawnPosition.y - offSetSpawn) + offsetDir.y, spawnPosition.z + distanceFromGround, spawnPosition.w)
-	spawnTransform:SetPosition(spawnTransform, pos or newPosition)
-	spawnTransform:SetOrientationEuler(spawnTransform, angles or EulerAngles.new(0, 0, playerAngles.yaw - rotation))
-	  
+  local heading = AMM.player:GetWorldForward()
+  local offsetDir = Vector3.new(heading.x * distanceFromPlayer, heading.y * distanceFromPlayer, heading.z)
+  local spawnTransform = AMM.player:GetWorldTransform()
+  local spawnPosition = GetSingleton('WorldPosition'):ToVector4(spawnTransform.Position)
+  local newPosition = Vector4.new((spawnPosition.x - offSetSpawn) + offsetDir.x, (spawnPosition.y - offSetSpawn) + offsetDir.y, spawnPosition.z + distanceFromGround, spawnPosition.w)
+  spawnTransform:SetPosition(spawnTransform, pos or newPosition)
+  spawnTransform:SetOrientationEuler(spawnTransform, angles or EulerAngles.new(0, 0, playerAngles.yaw - rotation))
+    
   spawn.entityID = exEntitySpawner.Spawn(spawn.template, spawnTransform, app, record)
 
-	Cron.Every(0.1, {tick = 1}, function(timer)
-		local entity = Game.FindEntityByID(spawn.entityID)
+  Cron.Every(0.1, {tick = 1}, function(timer)
+    local entity = Game.FindEntityByID(spawn.entityID)
     timer.tick = timer.tick + 1
-		if entity then
-			spawn.handle = entity
+    if entity then
+      spawn.handle = entity
       spawn.hash = tostring(entity:GetEntityID().hash)
       spawn.appearance = AMM:GetAppearance(spawn)
       spawn.spawned = true
@@ -1292,8 +1293,8 @@ function Props:SpawnProp(spawn, pos, angles)
         }
       end
 
-			if AMM:GetScanClass(spawn.handle) == 'entEntity' or AMM:GetScanClass(spawn.handle) == 'entGameEntity' then
-				spawn.type = 'entEntity'
+      if AMM:GetScanClass(spawn.handle) == 'entEntity' or AMM:GetScanClass(spawn.handle) == 'entGameEntity' then
+        spawn.type = 'entEntity'
       else
         spawn.type = 'Prop'
       end
@@ -1306,24 +1307,24 @@ function Props:SpawnProp(spawn, pos, angles)
 
         if AMM.userSettings.floatingTargetTools and AMM.userSettings.autoOpenTargetTools then
           AMM.Tools.movementWindow.isEditing = true
-				end
+        end
       end
 
-			Cron.Halt(timer)
-		elseif timer.tick > 20 then
-			spawn.parameters = {newPosition, GetSingleton('Quaternion'):ToEulerAngles(AMM.player:GetWorldOrientation())}
-			Cron.Halt(timer)
-		end
-	end)
+      Cron.Halt(timer)
+    elseif timer.tick > 20 then
+      spawn.parameters = {newPosition, GetSingleton('Quaternion'):ToEulerAngles(AMM.player:GetWorldOrientation())}
+      Cron.Halt(timer)
+    end
+  end)
 
-	while Props.spawnedProps[spawn.uniqueName()] ~= nil do
+  while Props.spawnedProps[spawn.uniqueName()] ~= nil do
     local num = spawn.name:match("|([^|]+)")
     if num then num = tonumber(num) + 1 else num = 1 end
     spawn.name = spawn.name:gsub(" | "..tostring(num - 1), "")
     spawn.name = spawn.name.." | "..tostring(num)
-	end
+  end
 
-	Props.spawnedProps[spawn.uniqueName()] = spawn
+  Props.spawnedProps[spawn.uniqueName()] = spawn
   table.insert(Props.spawnedPropsList, spawn)
 end
 
@@ -1394,12 +1395,12 @@ function Props:ActivatePreset(preset)
 
   Props.activePreset = preset
 
-  pcall(function() spdlog.info('After setting variable '..Props.activePreset.file_name or "no file name") end)
+  pcall(function() spdlog.info('ActivatePreset: After setting '.. Props.activePreset.file_name or "no file name") end)
 
   Props:Update()
   Props:SensePropsTriggers()
 
-  pcall(function() spdlog.info('After update '..Props.activePreset.file_name or "no file name") end)
+  pcall(function() spdlog.info('ActivatePreset: After update '..Props.activePreset.file_name or "no file name") end)
 end
 
 function Props:BackupPreset(preset)
@@ -1462,7 +1463,7 @@ function Props:LoadPresetData(preset)
   local file = io.open('User/Decor/'..preset, 'r')
   if file then
     local contents = file:read( "*a" )
-		local presetData = json.decode(contents)
+    local presetData = json.decode(contents)
     file:close()
     return presetData['name'], presetData['props'], presetData['lights'] or {}
   end
@@ -1516,7 +1517,7 @@ function Props:SavePresetUserAction()
 end
 
 function Props:SavePreset(preset, path, fromDB)
-  spdlog.info('Saving preset...')
+  spdlog.info(f('Saving preset %s, fromDB: %s ...', preset.name, tostring(fromDB)))
 
   if fromDB then
     local props = {}
@@ -1529,8 +1530,10 @@ function Props:SavePreset(preset, path, fromDB)
       table.insert(lights, light)
     end
 
+    -- this will always increment the preset name O_O    
     local presetFromDB = Props:NewPreset(preset.name or 'Preset')
     presetFromDB.props = props
+
     presetFromDB.lights = lights
     presetFromDB.file_name = preset.name..".json"
     presetFromDB.name = preset.name or presetFromDB.name
@@ -1583,8 +1586,6 @@ function Props:GetPropsForPreset()
   return props, lights
 end
 
--- the other check would throw excpetion if assets were invalid. 
--- define compare constant outside of loop to save performance, this is actually a thingin LUA 
 local constantString = 'string'
 function Props:GetProps(query, tag)
   local dbQuery = 'SELECT * FROM saved_props ORDER BY name ASC'

@@ -2216,7 +2216,7 @@ function AMM:SetupAMMCharacters()
 
 		-- register conditionally to get rid of spammy messages in log
 		if path and not TweakDB:GetRecord(path) then
-    		TweakDB:CloneRecord(tdbid, ent.og)
+    	TweakDB:CloneRecord(tdbid, ent.og)
 
 			if string.find(tdbid, "Vehicle") then
 				TweakDB:SetFlat(tdbid..".entityTemplatePath", "base\\amm_vehicles\\entity\\"..path..".ent")
@@ -3592,12 +3592,6 @@ function AMM:SenseSBTriggers()
 			end
 		end
 	end
-end
-
-function AMM:ToggleTargetTools()
-	pcall(function() spdlog.info('Toggling target tools : tools is '.. tostring(not Tools)) end)
-	if not Tools then return end
-	Tools:ToggleTargetTools()
 end
 
 function AMM:SpawnSBInPosition(location)

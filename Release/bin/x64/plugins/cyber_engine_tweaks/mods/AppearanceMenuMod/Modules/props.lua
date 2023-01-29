@@ -2,14 +2,14 @@ Props = {}
 
 function Props:NewProp(uid, id, name, template, posString, scale, app, tag)
   local obj = {}
-	obj.handle = ''
+  obj.handle = ''
   obj.hash = ''
   obj.uid = uid
-	obj.id = id
-	obj.name = name
+  obj.id = id
+  obj.name = name
   obj.parameters = Props:GetParameters(template)
   obj.path = Props:GetEntityPath(template)
-	obj.template = template
+  obj.template = template
   obj.appearance = app
   obj.tag = tag
   obj.entityID = ''
@@ -550,8 +550,8 @@ function Props:DrawPresetConfig()
 
   if Props.activePreset ~= '' then
 
-    if ImGui.Button("Save", Props.style.buttonWidth, Props.style.buttonHeight) then        
-      Props:SavePreset(Props.activePreset, nil, true)
+    if ImGui.Button("Save", Props.style.buttonWidth, Props.style.buttonHeight) then
+      Props.SavePresetUserAction()      
     end
 
     if ImGui.Button("Rename", Props.style.buttonWidth, Props.style.buttonHeight) then        
@@ -1028,7 +1028,7 @@ function Props:ToggleHideProp(ent)
   end
 end
 
-function Props:SavePropPosition(ent)
+function Props:SavePropPosition(ent, calledBeforeSaving)
   local pos = ent.handle:GetWorldPosition()
   local angles = GetSingleton('Quaternion'):ToEulerAngles(ent.handle:GetWorldOrientation())
 	if pos == nil then
@@ -1057,7 +1057,7 @@ function Props:SavePropPosition(ent)
       db:execute(f('UPDATE saved_lights SET color = "%s", intensity = %f, radius = %f, angles = "%s" WHERE uid = %i', light.color, light.intensity, light.radius, light.angles, ent.uid))
     end
   else
-	  db:execute(f('INSERT INTO saved_props (entity_id, name, template_path, pos, trigger, scale, app, tag) VALUES ("%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")', ent.id, ent.name, ent.template, pos, trigger, scale, app, tag))
+    db:execute(f('INSERT INTO saved_props (entity_id, name, template_path, pos, trigger, scale, app, tag) VALUES ("%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")', ent.id, ent.name, ent.template, pos, trigger, scale, app, tag))
 
     if light then
       for uid in db:urows(f('SELECT uid FROM saved_props ORDER BY uid DESC LIMIT 1')) do
@@ -1065,6 +1065,9 @@ function Props:SavePropPosition(ent)
       end
     end
   end
+
+  -- auto-refresh of all props, user pushed "save" button
+  if calledBeforeSaving then return end
 
   Cron.After(2.0, function()
     if not ent.uid then
@@ -1500,6 +1503,18 @@ function Props:DeletePreset(preset)
   end
 end
 
+function Props:SavePresetUserAction()
+  -- first, save all prop position changes. Pass boolean to skip save, we'll do that after
+  for _, ent in pairs(Props.activeProps) do
+    if ent.handle then
+      Props:SavePropPosition(ent, true) 
+    end
+  end
+  
+  -- now, save preset
+  Props:SavePreset(Props.activePreset, nil, true)
+end
+
 function Props:SavePreset(preset, path, fromDB)
   spdlog.info('Saving preset...')
 
@@ -1518,6 +1533,7 @@ function Props:SavePreset(preset, path, fromDB)
     presetFromDB.props = props
     presetFromDB.lights = lights
     presetFromDB.file_name = preset.name..".json"
+    presetFromDB.name = preset.name or presetFromDB.name
 
     preset = presetFromDB
   end
@@ -1539,9 +1555,12 @@ function Props:SavePreset(preset, path, fromDB)
     return false
   end
 
-  local file = io.open(f(path or "User/Decor/%s", preset.file_name or preset.name..".json"), "w")
+
+  local filePath = f(path or "User/Decor/%s", preset.file_name or preset.name..".json")
+  local file = io.open(filePath, "w")
 
   if file then
+        spdlog.info(f('\nWriting %s to %s', preset.name, filePath))
         file:write(contents)
         file:close()
     return true
@@ -1564,6 +1583,9 @@ function Props:GetPropsForPreset()
   return props, lights
 end
 
+-- the other check would throw excpetion if assets were invalid. 
+-- define compare constant outside of loop to save performance, this is actually a thingin LUA 
+local constantString = 'string'
 function Props:GetProps(query, tag)
   local dbQuery = 'SELECT * FROM saved_props ORDER BY name ASC'
   if tag then dbQuery = 'SELECT * FROM saved_props WHERE tag = "'..tag..'" ORDER BY name ASC' end
@@ -1574,7 +1596,7 @@ function Props:GetProps(query, tag)
       local uid = path:match("(.+)_Props.(.+)")
       if uid then
         uid = uid:gsub("Custom_", "")
-        if Props.activePreset ~= '' and uid ~= "AMM" and next(AMM.modders) ~= nil then
+        if Props.activePreset ~= '' and uid ~= "AMM" and next(AMM.modders) ~= nil and type(Props.activePreset) ~= constantString then
           Props.activePreset.customIncluded = true
           Props.moddersList[" - "..AMM.modders[uid]] = ''
         end

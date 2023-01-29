@@ -2213,14 +2213,19 @@ function AMM:SetupAMMCharacters()
 
 	for _, ent in ipairs(ents) do
 		local tdbid, path = ent.tdbid, ent.path
+
+		-- register conditionally to get rid of spammy messages in log
+		if path and not TweakDB:GetRecord(path) then
     	TweakDB:CloneRecord(tdbid, ent.og)
 
-		if string.find(tdbid, "Vehicle") then
-			TweakDB:SetFlat(tdbid..".entityTemplatePath", "base\\amm_vehicles\\entity\\"..path..".ent")
-		else
-    		TweakDB:SetFlat(tdbid..".entityTemplatePath", "base\\amm_characters\\entity\\"..path..".ent")
+			if string.find(tdbid, "Vehicle") then
+				TweakDB:SetFlat(tdbid..".entityTemplatePath", "base\\amm_vehicles\\entity\\"..path..".ent")
+			else
+	    		TweakDB:SetFlat(tdbid..".entityTemplatePath", "base\\amm_characters\\entity\\"..path..".ent")
+			end
+
 		end
-  	end
+	end
 
 	-- Setup TweakDB Records
 	TweakDB:SetFlat("AMM_Character.TPP_Player_Female.fullDisplayName", TweakDB:GetFlat("Character.TPP_Player.displayName"))
@@ -2340,15 +2345,16 @@ function AMM:SetupCustomEntities()
 						end
 					end
 
-					-- Setup TweakDB Records
-					if entity.record ~= nil then
-						TweakDB:CloneRecord(entity_path, entity.record)
-					else
-						TweakDB:CloneRecord(entity_path, "Character.CitizenRichFemaleCasual")
-					end
+					if not TweakDB:GetRecord(entity_path) then
+						-- Setup TweakDB Records
+						if entity.record ~= nil then
+							TweakDB:CloneRecord(entity_path, entity.record)
+						else
+							TweakDB:CloneRecord(entity_path, "Character.CitizenRichFemaleCasual")
+						end
 
-    				TweakDB:SetFlat(entity_path..".entityTemplatePath", entity.path)
-
+	    				TweakDB:SetFlat(entity_path..".entityTemplatePath", entity.path)
+  				end
 					if attributes ~= nil then
 						local newAttributes = {}
 						for attr, value in pairs(attributes) do

@@ -394,7 +394,7 @@ function Props:DrawProps(props)
       if Props.activeProps[prop.uid] and Props.activeProps[prop.uid].handle and Props.activeProps[prop.uid].handle ~= '' then
         local propPos = Props.activeProps[prop.uid].handle:GetWorldPosition()
         local distanceFromPlayer = Util:VectorDistance(playerPos, propPos)
-        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 6 then
+        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 3 then
           Props:DrawSavedProp(prop, i)
         end
       end

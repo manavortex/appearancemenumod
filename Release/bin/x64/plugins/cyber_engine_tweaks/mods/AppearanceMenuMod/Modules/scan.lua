@@ -604,16 +604,20 @@ function Scan:AssignSeats(entities, instant, unmount)
   local command = 'AIMountCommand'
   if unmount then command = 'AIUnmountCommand' end
 
+  -- move them out of the loop
+  local handleEvtDataString = 'handle:gameMountEventData'
+  local handleEvtOptionString = 'handle:gameMountEventOptions'
+
   for _, assign in pairs(entities) do
     if not assign.entity:IsPlayer() then
       local cmd = NewObject(command)
-      local mountData = NewObject('handle:gameMountEventData')
+      local mountData = NewObject(handleEvtDataString)
       mountData.mountParentEntityId = assign.vehicle.handle:GetEntityID()
       mountData.isInstant = instant
       mountData.setEntityVisibleWhenMountFinish = true
       mountData.removePitchRollRotationOnDismount = false
       mountData.ignoreHLS = false
-      mountData.mountEventOptions = NewObject('handle:gameMountEventOptions')
+      mountData.mountEventOptions = NewObject(handleEvtOptionString)
       mountData.mountEventOptions.silentUnmount = false
       mountData.mountEventOptions.entityID = assign.vehicle.handle:GetEntityID()
       mountData.mountEventOptions.alive = true
@@ -910,10 +914,11 @@ end
 
 function Scan:RemoveTriggerByPosition(target, playerPos)
   local check = nil
+   local deleteQuery = "DELETE FROM appearance_triggers WHERE entity_id = '%s' AND args = '%s'"
   for pos in db:urows(f('SELECT args FROM appearance_triggers WHERE entity_id = "%s" AND type = 6', target.id)) do
     local dist = Util:VectorDistance(Util:GetPosFromString(pos), playerPos)
     if dist < 20 then
-      db:execute(f("DELETE FROM appearance_triggers WHERE entity_id = '%s' AND args = '%s'", target.id, pos))
+      db:execute(f(deleteQuery, target.id, pos))
     end
   end
 end
@@ -950,32 +955,35 @@ function Scan:ActivateAppTriggerForType(triggerType)
     position = 6
   }
 
-  local currentType = typeNum[triggerType]
+  if next(AMM.Spawn.spawnedNPCs) == nil then 
+    return
+  end
+  
+  local currentType = typeNum[triggerType]  
+  local selectQuery = 'SELECT * FROM appearance_triggers WHERE entity_id = "%s" AND type = %i'
+  
+  for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
+    if ent and ent.handle and type(ent.handle) == 'userdata' and ent.handle:IsNPC() then
+      local triggers = {}
+      for x in db:nrows(f(selectQuery, ent.id, currentType)) do
+        table.insert(triggers, x)
+      end
 
-  if next(AMM.Spawn.spawnedNPCs) ~= nil then
-    for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
-      if ent and ent.handle and type(ent.handle) == 'userdata' and ent.handle:IsNPC() then
-        local triggers = {}
-        for x in db:nrows(f('SELECT * FROM appearance_triggers WHERE entity_id = "%s" AND type = %i', ent.id, currentType)) do
-          table.insert(triggers, x)
-        end
+      local lastApp = Scan.lastAppTriggers[ent.id] or nil
 
-        local lastApp = Scan.lastAppTriggers[ent.id] or nil
+      if triggers then
+        Scan.lastAppTriggers[ent.id] = ent.appearance
 
-        if triggers then
-          Scan.lastAppTriggers[ent.id] = ent.appearance
-
-          for _, trigger in ipairs(triggers) do
-            if (triggerType == "area" and trigger.args == AMM.playerCurrentDistrict)
-            or (triggerType == "zone" and trigger.args == AMM.playerCurrentZone) then
-              AMM:ChangeAppearanceTo(ent, trigger.appearance)
-            elseif triggerType == "combat" or triggerType == "default" then
-              AMM:ChangeAppearanceTo(ent, trigger.appearance)
-            end
+        for _, trigger in ipairs(triggers) do
+          if (triggerType == "area" and trigger.args == AMM.playerCurrentDistrict)
+          or (triggerType == "zone" and trigger.args == AMM.playerCurrentZone) then
+            AMM:ChangeAppearanceTo(ent, trigger.appearance)
+          elseif triggerType == "combat" or triggerType == "default" then
+            AMM:ChangeAppearanceTo(ent, trigger.appearance)
           end
-        elseif lastApp then
-          AMM:ChangeAppearanceTo(ent, lastApp)
         end
+      elseif lastApp then
+        AMM:ChangeAppearanceTo(ent, lastApp)
       end
     end
   end

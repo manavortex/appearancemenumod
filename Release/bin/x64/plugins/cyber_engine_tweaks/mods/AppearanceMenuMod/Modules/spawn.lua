@@ -190,48 +190,50 @@ function Spawn:DrawCategories(style)
     else
       ImGui.Text("No Results")
     end
-  else
-    local x, y = GetDisplayResolution()
-    if ImGui.BeginChild("Categories", ImGui.GetWindowContentRegionWidth(), y / 2) then
-      for _, category in ipairs(Spawn.categories) do
-			local entities = {}
+    return
+  end
+  
+  -- searching for spawn
+  local x, y = GetDisplayResolution()
+  if ImGui.BeginChild("Categories", ImGui.GetWindowContentRegionWidth(), y / 2) then
+    for _, category in ipairs(Spawn.categories) do
+    local entities = {}
 
-			if Spawn.entities[category] == nil or category.cat_name == 'Favorites' then
-				if category.cat_name == 'Favorites' then
-					local query = "SELECT * FROM favorites"
-					for fav in db:nrows(query) do
-						query = f("SELECT * FROM entities WHERE entity_id = '%s' AND cat_id IN %s", fav.entity_id, validCatIDs)
-						for en in db:nrows(query) do
-							if fav.parameters ~= nil then en.parameters = fav.parameters end
-							en.entity_name = fav.entity_name
-							table.insert(entities, en)
-						end
-					end
-					if #entities == 0 then
-						if ImGui.CollapsingHeader(category.cat_name) then
-							ImGui.Text("It's empty :(")
-						end
-					end
-				else
-					local query = f("SELECT * FROM entities WHERE is_spawnable = 1 AND cat_id == '%s' ORDER BY entity_name ASC", category.cat_id)
-					for en in db:nrows(query) do
-						table.insert(entities, en)
-					end
-				end
-
-				Spawn.entities[category] = entities
-			end
-
-			if Spawn.entities[category] ~= nil and #Spawn.entities[category] ~= 0 then
-        		if ImGui.CollapsingHeader(category.cat_name) then
-					Spawn:DrawEntitiesButtons(Spawn.entities[category], category.cat_name, style)
-				end
-      	end
+    if Spawn.entities[category] == nil or category.cat_name == 'Favorites' then
+      if category.cat_name == 'Favorites' then
+        local query = "SELECT * FROM favorites"
+        for fav in db:nrows(query) do
+          query = f("SELECT * FROM entities WHERE entity_id = '%s' AND cat_id IN %s", fav.entity_id, validCatIDs)
+          for en in db:nrows(query) do
+            if fav.parameters ~= nil then en.parameters = fav.parameters end
+            en.entity_name = fav.entity_name
+            table.insert(entities, en)
+          end
+        end
+        if #entities == 0 then
+          if ImGui.CollapsingHeader(category.cat_name) then
+            ImGui.Text("It's empty :(")
+          end
+        end
+      else
+        local query = f("SELECT * FROM entities WHERE is_spawnable = 1 AND cat_id == '%s' ORDER BY entity_name ASC", category.cat_id)
+        for en in db:nrows(query) do
+          table.insert(entities, en)
+        end
       end
+
+      Spawn.entities[category] = entities
     end
 
-    ImGui.EndChild()
+    if Spawn.entities[category] ~= nil and #Spawn.entities[category] ~= 0 then
+          if ImGui.CollapsingHeader(category.cat_name) then
+        Spawn:DrawEntitiesButtons(Spawn.entities[category], category.cat_name, style)
+      end
+      end
+    end
   end
+
+  ImGui.EndChild()
 end
 
 function Spawn:DrawEntitiesButtons(entities, categoryName, style)
@@ -749,7 +751,7 @@ function Spawn:IsWeaponizeBlacklisted(ent)
 	local blacklist = {
 		"0xD47FABFD, 21"
 	}
-
+  
 	for _, id in ipairs(blacklist) do
 		if id == ent.id then return true end
 	end

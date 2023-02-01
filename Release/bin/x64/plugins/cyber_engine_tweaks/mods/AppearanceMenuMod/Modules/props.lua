@@ -112,7 +112,6 @@ function Props:Initialize()
 end
 
 function Props:Update()  
-  pcall(function() spdlog.info(f('Props:Update, active preset is %s', Props.activePreset)) end)
   if Props.activePreset and Props.activePreset ~= '' then
     Props.presets = Props:LoadPresets()
     Props.moddersList = {}
@@ -123,7 +122,6 @@ function Props:Update()
     Props.triggers = Props:GetTriggers()
     Props.tags = Props:GetTags()
     Util.playerLastPos = ''
-    spdlog.info('during update')
     Props:SavePreset(Props.activePreset)
   else
     Props.savedProps = {}
@@ -207,6 +205,10 @@ function Props:DrawPresetsTab()
   end
 end
 
+-- move them out of the loop
+local favoriteString = "Favorite"
+local unfavoriteString ="Unfavorite"
+
 function Props:DrawSpawnedProps()
   if #Props.spawnedPropsList > 0 then
     AMM.UI:TextColored("Spawned Props")
@@ -225,7 +227,7 @@ function Props:DrawSpawnedProps()
         ImGui.Text(nameLabel)
       end
 
-      local favoritesLabels = {"Favorite", "Unfavorite"}
+      local favoritesLabels = {favoriteString, unfavoriteString}
       AMM.Spawn:DrawFavoritesButton(favoritesLabels, spawn)
 
       ImGui.SameLine()
@@ -340,11 +342,13 @@ function Props:DrawCategories()
       for _, category in ipairs(Props.categories) do
         local entities = {}
 
+        -- take it out f the loop
+        local queryString = "SELECT * FROM entities WHERE entity_id = '%s' AND cat_id IN %s"
         if Props.entities[category] == nil or category.cat_name == 'Favorites' then
           if category.cat_name == 'Favorites' then
             local query = "SELECT * FROM favorites_props"
             for fav in db:nrows(query) do
-              query = f("SELECT * FROM entities WHERE entity_id = '%s' AND cat_id IN %s", fav.entity_id, validCatIDs)
+              query = f(queryString, fav.entity_id, validCatIDs)
               for en in db:nrows(query) do
                 if fav.parameters ~= nil then en.parameters = fav.parameters end
                 en.entity_name = fav.entity_name
@@ -358,10 +362,13 @@ function Props:DrawCategories()
             end
           else
             local query = f('SELECT * FROM entities WHERE is_spawnable = 1 '..customizableIDs..customProps..' AND cat_id == "%s" ORDER BY entity_name ASC', category.cat_id)
+            local VehicleString = "Vehicle"
+            local PropsString = "Props"
+            
             for en in db:nrows(query) do
-              if string.find(tostring(en.entity_path), "Vehicle") then 
+              if en.entity_path and string.find(tostring(en.entity_path), VehicleString) then 
                 en.parameters = {veh = true, dist = 6}
-                en.entity_path = en.entity_path:gsub("Vehicle", "Props")
+                en.entity_path = en.entity_path:gsub(VehicleString, PropsString)
               end
 
               table.insert(entities, en)
@@ -394,7 +401,7 @@ function Props:DrawProps(props)
       if Props.activeProps[prop.uid] and Props.activeProps[prop.uid].handle and Props.activeProps[prop.uid].handle ~= '' then
         local propPos = Props.activeProps[prop.uid].handle:GetWorldPosition()
         local distanceFromPlayer = Util:VectorDistance(playerPos, propPos)
-        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 3 then
+        if Props.activeProps[prop.uid].handle ~= '' and distanceFromPlayer < 6 then
           Props:DrawSavedProp(prop, i)
         end
       end
@@ -905,22 +912,24 @@ function Props:SpawnPropInPosition(ent, pos, angles)
   return ent
 end
 
-function Props:GetTagBasedOnLocation()
-  if AMM.Tools then
-    local playerPos = AMM.player:GetWorldPosition()
-    for _, loc in ipairs(AMM.Tools:GetLocations()) do
-      if loc.loc_name:match("%-%-%-%-") == nil then
-        local pos = Vector4.new(loc.x, loc.y, loc.z, loc.w)
-        local dist = Util:VectorDistance(playerPos, pos)
+function Props:GetTagBasedOnLocation()  
+  if not AMM.Tools then return end
+  
+  local playerPos = AMM.player:GetWorldPosition()
+  local namePartial = "%-%-%-%-"
+  
+  for _, loc in ipairs(AMM.Tools:GetLocations()) do
+    if loc.loc_name:match(namePartial) == nil then
+      local pos = Vector4.new(loc.x, loc.y, loc.z, loc.w)
+      local dist = Util:VectorDistance(playerPos, pos)
 
-        if dist <= 60 then
-          return loc.loc_name
-        end
+      if dist <= 60 then
+        return loc.loc_name
       end
     end
-
-    return "Misc"
   end
+  
+  return "Misc"
 end
 
 function Props:LoadHomes(userHomes)
@@ -1115,22 +1124,29 @@ function Props:CheckDefaultScale(components)
   return defaultScale
 end
 
-function Props:CheckForValidComponents(handle)
-  if handle then
-    local components = {}
+-- define strings for compare outside of loop to save performance. 
+-- This function gets called OFTEN.
+local invalidComponentType1 = 'entPhysicalSkinnedMeshComponent'
+local invalidComponentType2 = 'entSkinnedMeshComponent'
 
-    for comp in db:urows("SELECT cname FROM components WHERE type = 'Props'") do
+function Props:CheckForValidComponents(handle, propName)
+  if not handle then return false end
+    
+  local components = {}
+    
+  for comp in db:urows("SELECT cname FROM components WHERE type = 'Props'") do
+    
       local c = handle:FindComponentByName(CName.new(comp))
-      if c and NameToString(c:GetClassName()) ~= 'entPhysicalSkinnedMeshComponent'
-      and NameToString(c:GetClassName()) ~= 'entSkinnedMeshComponent' then
+      local cName = c and NameToString(c:GetClassName()) or nil      
+      
+      if cName 
+      and cName ~= invalidComponentType1
+      and cName ~= invalidComponentType2 then
         table.insert(components, c)
       end
     end
 
-    if #components > 0 then return components end
-  end
-
-  return false
+    return #components > 0 and components or false
 end
 
 function Props:RemoveProp(ent)
@@ -1185,6 +1201,7 @@ end
 function Props:DuplicateProp(spawn)
   local pos = spawn.handle:GetWorldPosition()
   local angles = GetSingleton('Quaternion'):ToEulerAngles(spawn.handle:GetWorldOrientation())
+  -- TODO add scaling of original spawn 
   local newSpawn = AMM.Spawn:NewSpawn(spawn.name, spawn.id, spawn.parameters, spawn.companion, spawn.path, spawn.template, spawn.rig)
   newSpawn.handle = spawn.handle
   Props:SpawnProp(newSpawn, pos, angles)
@@ -1378,16 +1395,20 @@ function Props:ActivatePreset(preset)
 
   local values = {}
   local lights = {}
+  
+  local formatString = '(%i, "%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")'
   for i, prop in ipairs(preset.props) do
     local scale = prop.scale
     if scale == -1 then scale = nil end
     if type(scale) == "table" then scale = Props:GetScaleString(scale) end
     prop.uid = prop.uid or i
-    table.insert(values, f('(%i, "%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")', prop.uid, prop.entity_id, prop.name, prop.template_path, prop.pos, prop.trigger, scale, prop.app, prop.tag))
+    table.insert(values, f(formatString, prop.uid, prop.entity_id, prop.name, prop.template_path, prop.pos, prop.trigger, scale, prop.app, prop.tag))
   end
 
+
+  formatString = '(%i, "%s", "%s", %f, %f, "%s")'
   for _, light in ipairs(preset.lights) do
-    table.insert(lights, f('(%i, "%s", "%s", %f, %f, "%s")', light.uid, light.entity_id, light.color, light.intensity, light.radius, light.angles))
+    table.insert(lights, f(formatString, light.uid, light.entity_id, light.color, light.intensity, light.radius, light.angles))
   end
 
   db:execute(f('INSERT INTO saved_props (uid, entity_id, name, template_path, pos, trigger, scale, app, tag) VALUES %s', table.concat(values, ", ")))
@@ -1575,10 +1596,14 @@ function Props:GetPropsForPreset()
   if query then dbQuery = 'SELECT * FROM saved_props WHERE name LIKE "%'..query..'%" OR tag LIKE "%'..query..'%" ORDER BY name ASC' end
   local props = {}
   local lights = {}
+  
+  -- keep it out of the loop
+  local formatString = 'SELECT * FROM saved_lights WHERE uid = %i'
+  
   for prop in db:nrows(dbQuery) do
     table.insert(props, prop)
 
-    for light in db:nrows(f('SELECT * FROM saved_lights WHERE uid = %i', prop.uid)) do
+    for light in db:nrows(f(formatString, prop.uid)) do
       table.insert(lights, light)
     end
   end
@@ -1592,9 +1617,15 @@ function Props:GetProps(query, tag)
   if tag then dbQuery = 'SELECT * FROM saved_props WHERE tag = "'..tag..'" ORDER BY name ASC' end
   if query then dbQuery = 'SELECT * FROM saved_props WHERE name LIKE "%'..query..'%" OR tag LIKE "%'..query..'%" ORDER BY name ASC' end
   local props = {}
+  
+  
+  -- keep it out of the loop
+  local queryString = "SELECT entity_path FROM entities WHERE entity_id = '%s'"
+  local uidCheckExpression = "(.+)_Props.(.+)"
+  
   for prop in db:nrows(dbQuery) do
-    for path in db:urows(f("SELECT entity_path FROM entities WHERE entity_id = '%s'", prop.entity_id)) do
-      local uid = path:match("(.+)_Props.(.+)")
+    for path in db:urows(f(queryString, prop.entity_id)) do
+      local uid = path:match(uidCheckExpression)
       if uid then
         uid = uid:gsub("Custom_", "")
         if Props.activePreset ~= '' and uid ~= "AMM" and next(AMM.modders) ~= nil and type(Props.activePreset) ~= constantString then

@@ -141,7 +141,7 @@ function Poses:Draw(AMM, target)
           if specials and not Util:CheckIfTableHasValue(categories, target.name) then
             table.insert(categories, target.name)
           end          
-
+          
           for _, category in ipairs(categories) do
             local gender = Util:GetPlayerGender()
 
@@ -329,8 +329,9 @@ end
 function Poses:GetAnimationsForListOfIDs(ids)
   local parsedIDs = "("..table.concat(ids, ", ")..")"
   local orderCase = " ORDER BY CASE anim_id"
+  local format = " WHEN %i THEN %i"
   for i, id in ipairs(ids) do
-    orderCase = orderCase..f(" WHEN %i THEN %i", id, i)
+    orderCase = orderCase..f(format, id, i)
   end
   orderCase = orderCase.." END"
 

@@ -1775,7 +1775,7 @@ function Tools:DrawMovementWindow()
     elseif Tools.currentTarget and Tools.currentTarget ~= '' then
 
       if Tools.currentTargetComponents == nil then
-        Tools.currentTargetComponents = AMM.Props:CheckForValidComponents(Tools.currentTarget.handle)
+        Tools.currentTargetComponents = AMM.Props:CheckForValidComponents(Tools.currentTarget.handle, Tools.currentTarget.name)
       end
 
       local components = Tools.currentTargetComponents

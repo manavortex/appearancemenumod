@@ -577,6 +577,11 @@ function AMM:new()
 	 	drawWindow = not drawWindow
 	 end)
 
+	 -- Keybinds
+	 registerHotkey("amm_target_tools", "Open Target Tools", function()
+	 	AMM:ToggleTargetTools(AMM)
+	 end)
+
 	 registerHotkey("amm_cycle", "Cycle Appearance", function()
 		local target = AMM:GetTarget()
 		if target ~= nil then
@@ -2387,35 +2392,37 @@ function AMM:SetupCustomProps()
 				if archive then table.insert(AMM.collabArchives, {name = archive.name, desc = archive.description, active = true, optional = false}) end
 
 				for _, prop in ipairs(props) do
+					if prop.path and '' ~= prop.path then 
 
-					local ent = prop.path:match("[^\\]*.ent$"):gsub(".ent", "")
-					local entity_path = "Custom_"..uid.."_Props."..ent
+						local ent = prop.path:match("[^\\]*.ent$"):gsub(".ent", "")
+						local entity_path = "Custom_"..uid.."_Props."..ent
 
-					local check = 0
-					for count in db:urows(f('SELECT COUNT(1) FROM entities WHERE entity_path = "%s"', entity_path)) do
-						check = count
-					end
-
-					if check == 0 then
 						local check = 0
-						for count in db:urows(f('SELECT COUNT(1) FROM entities WHERE entity_name = "%s"', prop.name)) do
+						for count in db:urows(f('SELECT COUNT(1) FROM entities WHERE entity_path = "%s"', entity_path)) do
 							check = count
 						end
 
-						if check ~= 0 then
-							prop.name = uid.." "..prop.name
+						if check == 0 then
+							local check = 0
+							for count in db:urows(f('SELECT COUNT(1) FROM entities WHERE entity_name = "%s"', prop.name)) do
+								check = count
+							end
+
+							if check ~= 0 then
+								prop.name = uid.." "..prop.name
+							end
+
+							local entity_id = AMM:GetScanID(entity_path)
+							local category = 48
+							for cat_id in db:urows(f('SELECT cat_id FROM categories WHERE cat_name = "%s"', prop.category)) do
+				      		category = cat_id
+				      	end
+
+							local tables = '(entity_id, entity_name, cat_id, parameters, can_be_comp, entity_path, is_spawnable, is_swappable, template_path)'
+							local values = f('("%s", "%s", %i, %s, "%s", "%s", "%s", "%s", "%s")', entity_id, prop.name, category, prop.distanceFromGround, 0, entity_path, 1, 0, prop.path)
+							values = values:gsub('nil', "NULL")
+							db:execute(f('INSERT INTO entities %s VALUES %s', tables, values))
 						end
-
-						local entity_id = AMM:GetScanID(entity_path)
-						local category = 48
-						for cat_id in db:urows(f('SELECT cat_id FROM categories WHERE cat_name = "%s"', prop.category)) do
-			      		category = cat_id
-			      	end
-
-						local tables = '(entity_id, entity_name, cat_id, parameters, can_be_comp, entity_path, is_spawnable, is_swappable, template_path)'
-						local values = f('("%s", "%s", %i, %s, "%s", "%s", "%s", "%s", "%s")', entity_id, prop.name, category, prop.distanceFromGround, 0, entity_path, 1, 0, prop.path)
-						values = values:gsub('nil', "NULL")
-						db:execute(f('INSERT INTO entities %s VALUES %s', tables, values))
 					end
 				end
 			end
@@ -3592,6 +3599,12 @@ function AMM:SenseSBTriggers()
 			end
 		end
 	end
+end
+
+function AMM:ToggleTargetTools()
+	pcall(function() spdlog.info('Toggling target tools : tools is '.. tostring(not Tools)) end)
+	if not Tools then return end
+	Tools:ToggleTargetTools()
 end
 
 function AMM:SpawnSBInPosition(location)

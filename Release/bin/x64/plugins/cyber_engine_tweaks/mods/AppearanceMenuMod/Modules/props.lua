@@ -1,5 +1,9 @@
 Props = {}
 
+-- keep it for comparison. Do not redefine in loop. Have at top of file so all functions can use it.
+local constantString = 'string'
+local constantUserdata = 'userdata'
+
 function Props:NewProp(uid, id, name, template, posString, scale, app, tag)
   local obj = {}
   obj.handle = ''
@@ -1362,9 +1366,11 @@ function Props:DespawnProp(ent)
   end
 end
 
+
 function Props:DespawnAllSavedProps()
   for _, ent in pairs(Props.activeProps) do
-    if ent.handle then
+    -- there might be invalid entities which will be of type string, these will lead to an exception
+    if ent.handle and type(ent.handle) == constantUserdata then
       exEntitySpawner.Despawn(ent.handle)
     end
   end
@@ -1611,7 +1617,6 @@ function Props:GetPropsForPreset()
   return props, lights
 end
 
-local constantString = 'string'
 function Props:GetProps(query, tag)
   local dbQuery = 'SELECT * FROM saved_props ORDER BY name ASC'
   if tag then dbQuery = 'SELECT * FROM saved_props WHERE tag = "'..tag..'" ORDER BY name ASC' end

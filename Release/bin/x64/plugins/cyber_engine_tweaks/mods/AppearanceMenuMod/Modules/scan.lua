@@ -55,7 +55,7 @@ function Scan:Initialize()
     { name = AMM.LocalizableString("Seat_BackLeft"), cname = "seat_back_left", enum = 2},
     { name = AMM.LocalizableString("Seat_BackRight"), cname = "seat_back_right", enum = 3},
   }
-  
+
   Scan.TPPCameraOptions = {
     { name = AMM.LocalizableString("Close"), vec = Vector4.new(0, -8, 0.5, 0)},
     { name = AMM.LocalizableString("Far"), vec = Vector4.new(0, -12, 0.5, 0)},
@@ -101,7 +101,7 @@ function Scan:Draw(AMM, target, s)
         if target.handle and target.handle ~= '' then
           target.options = AMM:GetAppearanceOptions(target.handle, target.id)
 
-          if target.type == "Spawn" and target.handle:IsNPC() then
+          if target.type == "Spawn" and target.handle.IsNPC and target.handle:IsNPC() then
             target.type = "NPCPuppet"
           end
         end
@@ -152,18 +152,18 @@ function Scan:Draw(AMM, target, s)
         if not AMM.playerInPhoto then
           table.insert(categories, { name = AMM.LocalizableString("Target_Actions"), actions = function(target) return Scan:DrawTargetActions(target) end })
         end
-    
+
         if Scan:TargetIsSpawn(target) then
           table.insert(categories, { name = AMM.LocalizableString("Appearance_Trigger"), actions = function(target) return Scan:DrawAppearanceTrigger(target) end })
         end
 
         AMM.UI:Spacing(3)
-    
+
         for _, category in ipairs(categories) do
           AMM.UI:PushStyleColor(ImGuiCol.Text, "TextColored")
           local treeNode = ImGui.TreeNodeEx(category.name, ImGuiTreeNodeFlags.DefaultOpen + ImGuiTreeNodeFlags.NoTreePushOnOpen)
           ImGui.PopStyleColor(1)
-    
+
           if treeNode then
             ImGui.Separator()
 
@@ -203,7 +203,7 @@ function Scan:DrawTargetInfo(target)
     AMM.UI:TextColored("ID:")
     ImGui.InputText("", target.id, 50, ImGuiInputTextFlags.ReadOnly)
     ImGui.SameLine()
-    if ImGui.SmallButton(AMM.LocalizableString("Button_SmallCopy")) then      
+    if ImGui.SmallButton(AMM.LocalizableString("Button_SmallCopy")) then
       ImGui.SetClipboardText(target.id)
     end
   end
@@ -333,7 +333,7 @@ function Scan:DrawAppearanceTrigger(target)
 
     local shouldDrawSavedArea = existingTrigger ~= nil and (existingTrigger.type == 4 or existingTrigger.type == 5)
     if shouldDrawSavedArea then
-      local area = existingTrigger.args        
+      local area = existingTrigger.args
       if area ~= currentArea then
         ImGui.Text(AMM.LocalizableString("Saved_")..Scan.selectedAppTrigger.name..": ")
         ImGui.SameLine()
@@ -565,7 +565,7 @@ function Scan:DrawListOfAppearances(target)
         local categories = AMM.Tools:PrepareCategoryHeadersForNibblesReplacer(target.options)
         for i, category in ipairs(categories) do
           local categoryHeader = ImGui.CollapsingHeader(category.name.."##"..i)
-    
+
           if categoryHeader then
             Scan:DrawAppearanceOptions(target, category.options, i)
           end
@@ -593,7 +593,7 @@ function Scan:DrawAppearanceOptions(target, options, categoryIndex)
 end
 
 function Scan:DrawMinimalUI()
-  
+
   AMM.UI:DrawCrossHair()
 
   ImGui.SetNextWindowSize(250, 180)
@@ -605,7 +605,7 @@ function Scan:DrawMinimalUI()
     if target == nil and (AMM.Tools.currentTarget and AMM.Tools.currentTarget ~= '') then
       target = AMM.Tools.currentTarget
     end
-    
+
     if target ~= nil then
       ImGui.Text(target.name)
       AMM.UI:TextColored(target.type)
@@ -657,14 +657,14 @@ function Scan:DrawSeatsPopup()
                   -- Update comboLabel to reflect the new selection
                   comboLabel = seat.name
               end
-      
+
               -- Ensure the current selected item stays highlighted
               if isSelected then
                   ImGui.SetItemDefaultFocus()
               end
           end
           ImGui.EndCombo()
-        end      
+        end
 
         ImGui.Spacing()
       end
@@ -824,7 +824,7 @@ function Scan:AutoAssignSeats()
     -- Calculate available seats dynamically by filtering out occupied seats in the new vehicle
     local availableSeats = {}
     local occupiedSeatNames = {}
-    
+
     for _, seatAssignment in pairs(Scan.selectedSeats) do
       if seatAssignment.vehicle and seatAssignment.vehicle.hash == Scan.vehicle.hash then
         occupiedSeatNames[seatAssignment.seat.cname] = true
@@ -944,7 +944,7 @@ function Scan:SetDriverVehicleToGoTo(driver, destination, needDriver)
   cmd.speedInTraffic = 100
   cmd.forceGreenLights = true
   cmd = cmd:Copy()
-  
+
   local event = NewObject("handle:AINPCCommandEvent")
   event.command = cmd
   driver.vehicle.handle:QueueEvent(event)
@@ -1046,7 +1046,7 @@ end
 -- Save Despawn methods
 function Scan:LoadSavedDespawns()
   local despawns = {}
-  
+
   for r in db:nrows("SELECT * FROM saved_despawns") do
     despawns[r.entity_hash] = {pos = r.position, removed = false}
   end
@@ -1078,7 +1078,7 @@ function Scan:SenseSavedDespawns()
 
     if next(Scan.savedDespawns) ~= nil then
       local playerPos = Game.GetPlayer():GetWorldPosition()
-      for hash, ent in pairs(Scan.savedDespawns) do        
+      for hash, ent in pairs(Scan.savedDespawns) do
         if ent.removed == false then
           local dist = Util:VectorDistance(playerPos, Util:GetPosFromString(ent.pos))
 
@@ -1160,7 +1160,7 @@ function Scan:ActivateAppTriggerForType(triggerType)
 
   if next(AMM.Spawn.spawnedNPCs) ~= nil then
     for _, ent in pairs(AMM.Spawn.spawnedNPCs) do
-      if ent and ent.handle and type(ent.handle) == 'userdata' and ent.handle:IsNPC() then
+      if ent and ent.handle and type(ent.handle) == 'userdata' and ent.handle.IsNPC and ent.handle:IsNPC() then
         local triggers = {}
         for x in db:nrows(f('SELECT * FROM appearance_triggers WHERE entity_id = "%s" AND type = %i', ent.id, currentType)) do
           table.insert(triggers, x)

@@ -5431,7 +5431,7 @@ function AMM:CheckCompanionDistances()
     local playerPos = player:GetWorldPosition()
 
     for _, spawn in pairs(AMM.Spawn.spawnedNPCs) do
-      if spawn.entityID and spawn.handle and spawn.handle:IsNPC() then
+      if spawn.entityID and spawn.handle and spawn.handle.IsNPC and spawn.handle:IsNPC() then
         local npcPos = spawn.handle:GetWorldPosition()
         local distance = Util:VectorDistance(playerPos, npcPos)
 		  local followDistance = AMM.followDistance[2] or 3

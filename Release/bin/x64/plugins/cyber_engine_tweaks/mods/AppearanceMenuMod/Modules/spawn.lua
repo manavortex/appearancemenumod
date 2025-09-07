@@ -139,7 +139,7 @@ function Spawn:DrawActiveSpawns(style)
 
 		if spawn.handle then
 			if not(mountedVehicle and mountedVehicle:GetEntityID().hash == spawn.handle:GetEntityID().hash) then
-				if AMM.UI:SmallButton(AMM.LocalizableString("Button_SmallDespawn").."##"..spawn.name) then					
+				if AMM.UI:SmallButton(AMM.LocalizableString("Button_SmallDespawn").."##"..spawn.name) then
 					spawn:Despawn()
 				end
 			end
@@ -154,7 +154,7 @@ function Spawn:DrawActiveSpawns(style)
         end
       end
 
-      if spawn.handle and not(spawn.handle:IsVehicle()) and not(spawn.handle:IsDevice()) and not(spawn.handle:IsDead()) and Util:CanBeHostile(spawn) then
+      if spawn.handle and not(spawn.handle.IsVehicle and spawn.handle:IsVehicle()) and not(spawn.handle.IsDevice and spawn.handle:IsDevice()) and not(spawn.handle.IsDead and spawn.handle:IsDead()) and Util:CanBeHostile(spawn) then
 
 			local hostileButtonLabel = AMM.LocalizableString("Button_LabelHostile")
 			if not(spawn.handle.isPlayerCompanionCached) then
@@ -400,7 +400,7 @@ function Spawn:DrawFavoritesButton(buttonLabels, entity, fullButton)
 				if isFavorite == 0 then
 					local newEntity = Entity:new(entity)
 					newEntity.name = Spawn.currentFavoriteName
-					
+
 					if (entity.type == "Spawn" or entity.type == "NPCPuppet") and not Util:CheckVByID(entity.id) then
 						newEntity.parameters = AMM:GetScanAppearance(entity.handle)
 
@@ -448,7 +448,7 @@ function Spawn:DrawArrowButton(direction, entity, index)
 	if ImGui.ArrowButton(direction .. entity.id, dirEnum) then
 		-- Fix positions BEFORE doing the swap so the table is clean
 		Util:FixPositionsForFavorites(favoriteType)
-		
+
 		 -- Positions are assumed to start at 0, so valid range is [0, favoritesCount - 1]
 		 if tempPos >= 0 and tempPos < favoritesCount then
 			  -- Fetch the row at the current position (index)
@@ -692,7 +692,7 @@ end
 
 function Spawn:SetNPCAsCompanion(targetPuppet)
 	Util:SetGodMode(targetPuppet, AMM.userSettings.isCompanionInvulnerable)
-	
+
 	local npcManager = targetPuppet.NPCManager
 	npcManager:ScaleToPlayer()
 
@@ -702,7 +702,7 @@ function Spawn:SetNPCAsCompanion(targetPuppet)
 		if targetPuppet:IsCrowd() and currentRole:IsA('AIFollowerRole') then
 			return true
 		end
-		
+
 		currentRole:OnRoleCleared(targetPuppet)
 	end
 

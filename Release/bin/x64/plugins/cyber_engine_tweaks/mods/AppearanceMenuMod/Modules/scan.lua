@@ -352,7 +352,7 @@ function Scan:DrawTargetActions(target)
     if ImGui.Button(AMM.LocalizableString("Button_RestoreAccess"), style.buttonWidth, style.buttonHeight - 5) then
       Util:RestoreElevator(target.handle)
     end
-  elseif target.handle:IsVehicle() then
+  elseif target.handle.IsVehicle and target.handle:IsVehicle() then
     if ImGui.Button(AMM.LocalizableString("Button_UnlockVehicle"), style.buttonWidth, style.buttonHeight - 5) then
       Util:UnlockVehicle(target.handle)
     end
@@ -484,7 +484,7 @@ function Scan:DrawTargetActions(target)
 
   Scan:DrawSeatsPopup()
 
-  if target.handle:IsNPC() then
+  if target.handle.IsNPC and target.handle:IsNPC() then
     local spawnID = AMM:IsSpawnable(target)
     if spawnID ~= nil then
       local favoritesLabels = {AMM.LocalizableString("Label_AddToSpawnFavs"), AMM.LocalizableString("Label_RemoveFromSpawnFavs")}
@@ -512,7 +512,7 @@ function Scan:DrawTargetActions(target)
 
   if AMM.userSettings.experimental and not mountedVehicle then
     local buttonWidth = style.buttonWidth
-    local shouldAllowSaveDespawn = not(target.handle:IsNPC() or target.handle:IsVehicle())
+    local shouldAllowSaveDespawn = target.handle.GetEntityID and not((target.handle.IsNPC and target.handle:IsNPC()) or (target.handle.IsVehicle and target.handle:IsVehicle()))
 
     if shouldAllowSaveDespawn then buttonWidth = style.halfButtonWidth end
 
